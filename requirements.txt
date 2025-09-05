@@ -1,0 +1,16 @@
+# FastAPI and server dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# File handling and async operations
+python-multipart==0.0.6
+aiofiles==23.2.1
+
+# Configuration management
+python-dotenv==1.0.0
+
+# HTTP requests for TTS API calls
+requests==2.31.0
+
+# Additional utilities
+pydantic==2.5.0
