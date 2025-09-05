@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.services.tts_service import TTSService, TTSServiceError, TTSAPIError, TTSConfigError
 from app.services.queue_manager import QueueManager, BatchJob, JobStatus, JobPriority
 from app.services.progress_broadcaster import get_progress_broadcaster
+from app.services.file_manager import FileManager
 from app.core.config import settings
 
 # Configure logging
@@ -34,20 +35,31 @@ logger = logging.getLogger(__name__)
 # Global service instances
 tts_service: Optional[TTSService] = None
 queue_manager: Optional[QueueManager] = None
+file_manager: Optional[FileManager] = None
 progress_broadcaster = get_progress_broadcaster()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    global tts_service, queue_manager
+    global tts_service, queue_manager, file_manager
     
     try:
         # Startup
         logger.info("Starting TTS Tool application...")
         
-        # Initialize TTS service
-        tts_service = TTSService()
+        # Initialize File Manager
+        file_manager = FileManager(
+            base_output_dir="./output",
+            default_template="tts_{index}_{datetime}.{ext}",
+            organization="date",  # Organize by date
+            enable_deduplication=True,
+            metadata_dir="./file_metadata"
+        )
+        logger.info("File manager initialized successfully")
+        
+        # Initialize TTS service with file manager
+        tts_service = TTSService(file_manager=file_manager)
         await tts_service.start()
         logger.info("TTS service initialized successfully")
         
@@ -690,13 +702,163 @@ async def get_progress_stats():
     return progress_broadcaster.get_connection_stats()
 
 
+# File Management Endpoints
+
+class FileManagementRequest(BaseModel):
+    """File management configuration request"""
+    organization_type: Optional[str] = Field(None, description="Directory organization type")
+    filename_template: Optional[str] = Field(None, description="Default filename template")
+    enable_deduplication: Optional[bool] = Field(None, description="Enable file deduplication")
+
+
+class BatchFilenameRequest(BaseModel):
+    """Batch filename mapping request"""
+    items: List[Dict[str, Any]] = Field(..., description="Items for filename mapping")
+    template: Optional[str] = Field(None, description="Custom filename template")
+
+
+class FileStatsResponse(BaseModel):
+    """File statistics response"""
+    total_files: int
+    total_size: int
+    by_encoding: Dict[str, int]
+    by_voice: Dict[str, int]
+    by_language: Dict[str, int]
+    by_date: Dict[str, int]
+    duplicates_avoided: int
+
+
+@app.get("/api/files/stats", response_model=FileStatsResponse)
+async def get_file_statistics():
+    """Get file management statistics"""
+    if not file_manager:
+        raise HTTPException(status_code=503, detail="File manager not available")
+    
+    try:
+        stats = await file_manager.get_file_statistics()
+        return FileStatsResponse(**stats)
+    except Exception as e:
+        logger.error(f"Failed to get file statistics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get file statistics: {str(e)}")
+
+
+@app.post("/api/files/batch-mapping")
+async def get_batch_filename_mapping(request: BatchFilenameRequest):
+    """Get batch filename mapping preview"""
+    if not file_manager:
+        raise HTTPException(status_code=503, detail="File manager not available")
+    
+    try:
+        mappings = await file_manager.batch_filename_mapping(request.items, request.template)
+        return {
+            "success": True,
+            "mappings": [{"text_preview": preview, "filename": filename} for preview, filename in mappings],
+            "template": request.template or file_manager.default_template.template,
+            "total_count": len(mappings)
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate batch mappings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate batch mappings: {str(e)}")
+
+
+@app.get("/api/files/templates")
+async def get_filename_templates():
+    """Get available filename template variables and examples"""
+    from app.services.file_manager import FilenameTemplate, DirectoryOrganizer
+    
+    return {
+        "variables": FilenameTemplate.VARIABLES,
+        "organization_types": DirectoryOrganizer.ORGANIZATION_TYPES,
+        "example_templates": [
+            "tts_{index}_{datetime}.{ext}",
+            "{voice}_{date}_{time}.{ext}",
+            "{language}_{voice}_{index}.{ext}",
+            "audio_{text_hash}_{voice}.{ext}",
+            "{category}/{voice}/{date}/{index}.{ext}"
+        ],
+        "default_template": file_manager.default_template.template if file_manager else "tts_{index}_{datetime}.{ext}"
+    }
+
+
+@app.post("/api/files/cleanup")
+async def cleanup_old_files(days: int = Field(30, ge=1, le=365)):
+    """Clean up old files and metadata"""
+    if not file_manager:
+        raise HTTPException(status_code=503, detail="File manager not available")
+    
+    try:
+        result = await file_manager.cleanup_old_files(days)
+        return {
+            "success": True,
+            "message": f"Cleanup completed for files older than {days} days",
+            "files_removed": result['files_removed'],
+            "metadata_cleaned": result['metadata_cleaned']
+        }
+    except Exception as e:
+        logger.error(f"Failed to cleanup files: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup files: {str(e)}")
+
+
+@app.put("/api/files/config")
+async def update_file_management_config(request: FileManagementRequest):
+    """Update file management configuration"""
+    if not file_manager:
+        raise HTTPException(status_code=503, detail="File manager not available")
+    
+    try:
+        updated_fields = []
+        
+        if request.organization_type is not None:
+            file_manager.organizer.organization = request.organization_type
+            updated_fields.append('organization_type')
+        
+        if request.filename_template is not None:
+            from app.services.file_manager import FilenameTemplate
+            file_manager.default_template = FilenameTemplate(request.filename_template)
+            updated_fields.append('filename_template')
+        
+        if request.enable_deduplication is not None:
+            file_manager.enable_deduplication = request.enable_deduplication
+            updated_fields.append('enable_deduplication')
+        
+        return {
+            "success": True,
+            "message": f"File management configuration updated",
+            "updated_fields": updated_fields
+        }
+    except Exception as e:
+        logger.error(f"Failed to update file management config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update config: {str(e)}")
+
+
+@app.get("/api/files/config")
+async def get_file_management_config():
+    """Get current file management configuration"""
+    if not file_manager:
+        raise HTTPException(status_code=503, detail="File manager not available")
+    
+    try:
+        return {
+            "base_output_dir": str(file_manager.base_output_dir),
+            "default_template": file_manager.default_template.template,
+            "organization": file_manager.organization,
+            "enable_deduplication": file_manager.enable_deduplication,
+            "metadata_dir": str(file_manager.metadata_dir) if file_manager.metadata_dir else None,
+            "available_organizations": list(file_manager.organizer.ORGANIZATION_TYPES.keys()),
+            "template_variables": list(file_manager.default_template.VARIABLES.keys())
+        }
+    except Exception as e:
+        logger.error(f"Failed to get file management config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get config: {str(e)}")
+
+
 @app.get("/api")
 async def api_info():
     """API information endpoint"""
     return {
         "name": "TTS Tool API",
         "version": "1.0.0",
-        "description": "豆包TTS音频生成工具API - Enhanced with Queue Management",
+        "description": "豆包TTS音频生成工具API - Enhanced with Queue Management and File Management",
         "docs_url": "/docs",
         "health_url": "/health",
         "endpoints": {
@@ -708,7 +870,12 @@ async def api_info():
             "jobs": "/api/queue/jobs",
             "job_control": "/api/queue/jobs/{job_id}/control",
             "websocket_progress": "/api/progress/ws",
-            "sse_progress": "/api/progress/sse"
+            "sse_progress": "/api/progress/sse",
+            "file_stats": "/api/files/stats",
+            "batch_mapping": "/api/files/batch-mapping",
+            "filename_templates": "/api/files/templates",
+            "file_cleanup": "/api/files/cleanup",
+            "file_config": "/api/files/config"
         },
         "features": [
             "Advanced job queue management",
@@ -717,7 +884,12 @@ async def api_info():
             "Configurable concurrency control (1-5)",
             "Automatic retry with exponential backoff",
             "Job history and status tracking",
-            "Persistent job state across restarts"
+            "Persistent job state across restarts",
+            "Advanced file management with template-based naming",
+            "File deduplication using MD5 hashes",
+            "Directory organization by date/voice/language",
+            "Batch filename mapping and preview",
+            "File cleanup and maintenance tools"
         ]
     }
 

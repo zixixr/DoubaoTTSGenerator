@@ -18,6 +18,8 @@ import aiofiles
 from datetime import datetime
 import time
 
+from .file_manager import FileManager
+
 
 class TTSServiceError(Exception):
     """Base exception for TTS service errors"""
@@ -47,13 +49,15 @@ class TTSService:
     - Voice and emotion configuration
     """
     
-    def __init__(self, config_path: Optional[str] = None, voice_config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, voice_config_path: Optional[str] = None,
+                 file_manager: Optional[FileManager] = None):
         """
         Initialize TTS service
         
         Args:
             config_path: Path to tts_config.json file
             voice_config_path: Path to voice_config.json file
+            file_manager: Optional file manager instance
         """
         self.logger = logging.getLogger(__name__)
         
@@ -67,6 +71,9 @@ class TTSService:
         
         # HTTP session
         self.session: Optional[aiohttp.ClientSession] = None
+        
+        # File manager
+        self.file_manager = file_manager
         
         # Retry configuration
         self.max_retries = 3
@@ -513,15 +520,19 @@ class TTSService:
     
     async def synthesize_to_file(self, text: str, output_path: str, 
                                voice_type: Optional[str] = None, encoding: str = "mp3",
-                               **kwargs) -> Dict[str, Any]:
+                               use_file_manager: bool = False, custom_filename: Optional[str] = None,
+                               filename_template: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """
         Synthesize speech and save to file
         
         Args:
             text: Text to synthesize
-            output_path: Output file path
+            output_path: Output file path (or base directory if using file manager)
             voice_type: Voice type (optional)
             encoding: Audio encoding format
+            use_file_manager: Whether to use advanced file management
+            custom_filename: Custom filename (when using file manager)
+            filename_template: Custom filename template (when using file manager)
             **kwargs: Additional parameters
             
         Returns:
@@ -532,29 +543,70 @@ class TTSService:
         # Synthesize audio
         audio_bytes = await self.synthesize_speech(text, voice_type, encoding, **kwargs)
         
-        # Create output directory if needed
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        final_file_path = output_path
+        file_manager_result = None
         
-        # Save to file
-        async with aiofiles.open(output_path, 'wb') as f:
-            await f.write(audio_bytes)
+        # Use file manager if available and requested
+        if use_file_manager and self.file_manager:
+            # Build context for file manager
+            char_info = self.count_characters(text)
+            voice_info = self.get_voice_by_type(voice_type) if voice_type else {}
+            
+            context = {
+                'text': text,
+                'text_length': char_info['total_chars'],
+                'voice_type': voice_type or self.config.get('audio', {}).get('voice_type'),
+                'voice_name': voice_info.get('name', ''),
+                'encoding': encoding,
+                'language': kwargs.get('language') or voice_info.get('languages', [''])[0] if voice_info.get('languages') else '',
+                'emotion': kwargs.get('emotion', ''),
+                'category': 'tts_generated'
+            }
+            
+            # Save using file manager
+            file_manager_result = await self.file_manager.save_file_with_management(
+                audio_bytes=audio_bytes,
+                context=context,
+                custom_filename=custom_filename,
+                template=filename_template
+            )
+            
+            if file_manager_result['success']:
+                final_file_path = file_manager_result['file_path']
+            else:
+                self.logger.warning(f"File manager failed, falling back to direct save: {file_manager_result.get('error')}")
+                # Fall back to direct save below
+                use_file_manager = False
+        
+        # Direct file save (fallback or when not using file manager)
+        if not use_file_manager or not file_manager_result or not file_manager_result['success']:
+            # Create output directory if needed
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save to file
+            async with aiofiles.open(output_path, 'wb') as f:
+                await f.write(audio_bytes)
+            
+            final_file_path = output_path
         
         end_time = time.time()
         
         # Gather synthesis info
         char_info = self.count_characters(text)
         synthesis_info = {
-            'file_path': output_path,
+            'file_path': final_file_path,
             'file_size': len(audio_bytes),
             'text_length': char_info['total_chars'],
             'utf8_bytes': char_info['utf8_bytes'],
-            'voice_type': voice_type or self.config['audio']['voice_type'],
+            'voice_type': voice_type or self.config.get('audio', {}).get('voice_type'),
             'encoding': encoding,
             'synthesis_time': end_time - start_time,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'used_file_manager': use_file_manager and file_manager_result and file_manager_result['success'],
+            'file_manager_result': file_manager_result
         }
         
-        self.logger.info(f"Audio saved to {output_path} ({len(audio_bytes)} bytes, {synthesis_info['synthesis_time']:.2f}s)")
+        self.logger.info(f"Audio saved to {final_file_path} ({len(audio_bytes)} bytes, {synthesis_info['synthesis_time']:.2f}s)")
         
         return synthesis_info
     

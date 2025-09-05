@@ -547,36 +547,57 @@ class QueueManager:
             item.mark_started()
             
             try:
-                # Generate filename
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                ext = item.params.get('encoding', 'mp3').lower()
-                if ext == 'pcm':
-                    ext = 'wav'
+                # Check if TTS service has file manager
+                use_file_manager = hasattr(job.tts_service, 'file_manager') and job.tts_service.file_manager is not None
                 
-                filename_template = job.params.get('filename_template', 'tts_{index}_{timestamp}.{ext}')
-                filename = item.filename or filename_template.format(
-                    index=item.index + 1,
-                    timestamp=timestamp,
-                    ext=ext
-                )
-                
-                if not filename.endswith(f'.{ext}'):
-                    filename = f"{filename}.{ext}"
-                
-                output_path = Path(job.output_dir) / filename
-                
-                # Synthesize audio using TTS service
-                result = await job.tts_service.synthesize_to_file(
-                    text=item.text,
-                    output_path=str(output_path),
-                    voice_type=item.params.get('voice_type'),
-                    encoding=item.params.get('encoding', 'mp3'),
-                    speed_ratio=item.params.get('speed_ratio', 1.0),
-                    volume_ratio=item.params.get('volume_ratio', 1.0),
-                    pitch_ratio=item.params.get('pitch_ratio', 1.0),
-                    emotion=item.params.get('emotion'),
-                    language=item.params.get('language')
-                )
+                if use_file_manager:
+                    # Use file manager for advanced file handling
+                    result = await job.tts_service.synthesize_to_file(
+                        text=item.text,
+                        output_path=job.output_dir,  # Base directory when using file manager
+                        voice_type=item.params.get('voice_type'),
+                        encoding=item.params.get('encoding', 'mp3'),
+                        use_file_manager=True,
+                        custom_filename=item.filename,
+                        filename_template=job.params.get('filename_template'),
+                        speed_ratio=item.params.get('speed_ratio', 1.0),
+                        volume_ratio=item.params.get('volume_ratio', 1.0),
+                        pitch_ratio=item.params.get('pitch_ratio', 1.0),
+                        emotion=item.params.get('emotion'),
+                        language=item.params.get('language')
+                    )
+                else:
+                    # Legacy filename generation (fallback)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    ext = item.params.get('encoding', 'mp3').lower()
+                    if ext == 'pcm':
+                        ext = 'wav'
+                    
+                    filename_template = job.params.get('filename_template', 'tts_{index}_{timestamp}.{ext}')
+                    filename = item.filename or filename_template.format(
+                        index=item.index + 1,
+                        timestamp=timestamp,
+                        ext=ext
+                    )
+                    
+                    if not filename.endswith(f'.{ext}'):
+                        filename = f"{filename}.{ext}"
+                    
+                    output_path = Path(job.output_dir) / filename
+                    
+                    # Use legacy file saving
+                    result = await job.tts_service.synthesize_to_file(
+                        text=item.text,
+                        output_path=str(output_path),
+                        voice_type=item.params.get('voice_type'),
+                        encoding=item.params.get('encoding', 'mp3'),
+                        use_file_manager=False,
+                        speed_ratio=item.params.get('speed_ratio', 1.0),
+                        volume_ratio=item.params.get('volume_ratio', 1.0),
+                        pitch_ratio=item.params.get('pitch_ratio', 1.0),
+                        emotion=item.params.get('emotion'),
+                        language=item.params.get('language')
+                    )
                 
                 item.mark_completed(result)
                 job.completed_count += 1
