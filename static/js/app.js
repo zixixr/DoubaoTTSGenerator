@@ -11,6 +11,10 @@ class TTSApp {
         this.voices = {};
         this.currentAudio = null;
         this.progressWebSocket = null;
+        this.sseConnection = null;
+        this.currentJobId = null;
+        this.templateInfo = null;
+        this.fileStats = null;
         this.settings = {
             maxConcurrent: 3,
             autoPreview: false
@@ -27,8 +31,11 @@ class TTSApp {
         this.setupUI();
         await this.loadVoices();
         await this.loadConfig();
+        await this.loadTemplateInfo();
+        await this.loadFileStats();
         this.loadSettings();
         this.checkAPIStatus();
+        this.setupSSEConnection();
         
         // Initialize tooltips and other UI enhancements
         this.initializeTooltips();
