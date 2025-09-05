@@ -781,7 +781,7 @@ async def get_filename_templates():
 
 
 @app.post("/api/files/cleanup")
-async def cleanup_old_files(days: int = Field(30, ge=1, le=365)):
+async def cleanup_old_files(days: int = 30):
     """Clean up old files and metadata"""
     if not file_manager:
         raise HTTPException(status_code=503, detail="File manager not available")
