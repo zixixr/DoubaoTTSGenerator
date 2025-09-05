@@ -9,16 +9,19 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.tts_service import TTSService, TTSServiceError, TTSAPIError, TTSConfigError
+from app.services.queue_manager import QueueManager, BatchJob, JobStatus, JobPriority
+from app.services.progress_broadcaster import get_progress_broadcaster
 from app.core.config import settings
 
 # Configure logging
@@ -28,30 +31,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global TTS service instance
+# Global service instances
 tts_service: Optional[TTSService] = None
+queue_manager: Optional[QueueManager] = None
+progress_broadcaster = get_progress_broadcaster()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    global tts_service
+    global tts_service, queue_manager
     
     try:
         # Startup
         logger.info("Starting TTS Tool application...")
+        
+        # Initialize TTS service
         tts_service = TTSService()
         await tts_service.start()
         logger.info("TTS service initialized successfully")
+        
+        # Initialize Queue Manager
+        queue_manager = QueueManager(
+            storage_dir="./queue_data",
+            max_concurrent_jobs=settings.concurrent_requests
+        )
+        await queue_manager.start()
+        logger.info("Queue manager initialized successfully")
+        
         yield
         
     except Exception as e:
-        logger.error(f"Failed to initialize TTS service: {e}")
+        logger.error(f"Failed to initialize services: {e}")
         raise
     finally:
         # Shutdown
+        if queue_manager:
+            await queue_manager.stop()
         if tts_service:
             await tts_service.close()
+        await progress_broadcaster.shutdown()
         logger.info("TTS Tool application shutdown complete")
 
 
@@ -116,7 +135,9 @@ class BatchTTSRequest(BaseModel):
     """Batch TTS generation request"""
     items: List[BatchTTSItem] = Field(..., min_length=1, max_length=50, description="批量处理项目")
     output_dir: str = Field("./output", description="输出目录")
-    max_concurrent: int = Field(3, ge=1, le=10, description="最大并发数")
+    max_concurrent: int = Field(3, ge=1, le=5, description="最大并发数")
+    max_retries: int = Field(3, ge=0, le=5, description="最大重试次数")
+    priority: str = Field("normal", description="任务优先级")
     filename_template: str = Field("tts_{index}_{timestamp}.{ext}", description="文件名模板")
 
 
@@ -149,10 +170,10 @@ class BatchTTSResponse(BaseModel):
     """Batch TTS response"""
     success: bool
     message: str
-    completed: int
-    failed: int
-    total: int
-    results: List[Dict[str, Any]]
+    job_id: str
+    status: str
+    submitted_at: str
+    total_items: int
 
 
 class VoiceInfo(BaseModel):
@@ -183,6 +204,32 @@ class HealthResponse(BaseModel):
     timestamp: str
     version: str
     service_status: str
+    queue_status: str
+    
+
+class JobControlRequest(BaseModel):
+    """Job control request (pause/resume/cancel)"""
+    action: str = Field(..., description="Action to perform: pause, resume, cancel, retry")
+    
+
+class JobListResponse(BaseModel):
+    """Job list response"""
+    jobs: List[Dict[str, Any]]
+    total_count: int
+    running_count: int
+    completed_count: int
+    failed_count: int
+    
+
+class QueueStatusResponse(BaseModel):
+    """Queue status response"""
+    running: bool
+    queue_size: int
+    running_jobs: int
+    max_concurrent_jobs: int
+    total_jobs: int
+    stats: Dict[str, Any]
+    jobs_by_status: Dict[str, int]
 
 
 # Middleware for request logging and timing
@@ -266,14 +313,16 @@ async def health_check():
     """Health check endpoint"""
     from datetime import datetime
     
-    # Check TTS service status
+    # Check service status
     service_status = "healthy" if tts_service else "unavailable"
+    queue_status = "healthy" if queue_manager and queue_manager._running else "unavailable"
     
     return HealthResponse(
         status="healthy",
         timestamp=datetime.now().isoformat(),
         version="1.0.0",
-        service_status=service_status
+        service_status=service_status,
+        queue_status=queue_status
     )
 
 
@@ -321,51 +370,55 @@ async def generate_tts(request: TTSRequest):
 
 
 @app.post("/api/tts/batch", response_model=BatchTTSResponse)
-async def batch_generate_tts(request: BatchTTSRequest, background_tasks: BackgroundTasks):
-    """Generate TTS audio for multiple texts"""
-    if not tts_service:
-        raise HTTPException(status_code=503, detail="TTS service not available")
+async def batch_generate_tts(request: BatchTTSRequest):
+    """Submit batch TTS generation job to queue"""
+    if not tts_service or not queue_manager:
+        raise HTTPException(status_code=503, detail="Services not available")
     
     try:
-        logger.info(f"Starting batch TTS generation for {len(request.items)} items")
+        logger.info(f"Submitting batch TTS job with {len(request.items)} items")
         
-        # Prepare text list and parameters
-        text_list = [item.text for item in request.items]
+        # Generate job ID
+        job_id = str(uuid.uuid4())
         
-        # Use first item's parameters as defaults, or service defaults
-        first_item = request.items[0]
+        # Create batch job
+        job = BatchJob.from_request(job_id, {
+            "items": [item.model_dump() for item in request.items],
+            "output_dir": request.output_dir,
+            "max_concurrent": request.max_concurrent,
+            "max_retries": request.max_retries,
+            "priority": request.priority,
+            "filename_template": request.filename_template
+        })
         
-        # Generate batch
-        results = await tts_service.batch_synthesize(
-            text_list=text_list,
-            output_dir=request.output_dir,
-            voice_type=first_item.voice_type,
-            encoding=first_item.encoding,
-            filename_template=request.filename_template,
-            max_concurrent=request.max_concurrent,
-            speed_ratio=first_item.speed_ratio,
-            volume_ratio=first_item.volume_ratio,
-            pitch_ratio=first_item.pitch_ratio,
-            emotion=first_item.emotion,
-            language=first_item.language
+        # Set up progress callback
+        def progress_callback(progress_data):
+            # Use asyncio to schedule the coroutine
+            asyncio.create_task(progress_broadcaster.broadcast_progress(progress_data))
+        
+        job.progress_callback = progress_callback
+        
+        # Submit to queue
+        await queue_manager.submit_job(job, tts_service)
+        
+        # Broadcast job submission
+        await progress_broadcaster.broadcast_job_status(
+            job_id, "submitted", 
+            {"total_items": len(request.items), "priority": request.priority}
         )
         
-        # Count successful and failed
-        successful = sum(1 for r in results if r.get('success', False))
-        failed = len(results) - successful
-        
         return BatchTTSResponse(
-            success=successful > 0,
-            message=f"Batch processing completed: {successful}/{len(results)} successful",
-            completed=successful,
-            failed=failed,
-            total=len(results),
-            results=results
+            success=True,
+            message=f"Batch job submitted successfully",
+            job_id=job_id,
+            status="queued",
+            submitted_at=datetime.now().isoformat(),
+            total_items=len(request.items)
         )
         
     except Exception as e:
-        logger.error(f"Batch TTS generation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Batch TTS generation failed: {str(e)}")
+        logger.error(f"Failed to submit batch job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to submit batch job: {str(e)}")
 
 
 @app.get("/api/voices", response_model=VoicesResponse)
@@ -470,6 +523,12 @@ async def update_config(request: ConfigUpdateRequest):
         
         logger.info(f"Configuration updated: {', '.join(updated_fields)}")
         
+        # Broadcast configuration change
+        await progress_broadcaster.broadcast_system_message(
+            "config_update", 
+            f"Configuration updated: {', '.join(updated_fields)}"
+        )
+        
         return {
             "message": f"Configuration updated successfully",
             "updated_fields": ", ".join(updated_fields)
@@ -488,21 +547,178 @@ async def root(request: Request):
 
 
 # API info endpoint
+# Queue Management Endpoints
+
+@app.get("/api/queue/status", response_model=QueueStatusResponse)
+async def get_queue_status():
+    """Get queue status and statistics"""
+    if not queue_manager:
+        raise HTTPException(status_code=503, detail="Queue manager not available")
+    
+    status = queue_manager.get_queue_status()
+    return QueueStatusResponse(**status)
+
+
+@app.get("/api/queue/jobs", response_model=JobListResponse)
+async def get_jobs(status: Optional[str] = None, limit: int = 50, offset: int = 0):
+    """Get list of jobs with optional status filter"""
+    if not queue_manager:
+        raise HTTPException(status_code=503, detail="Queue manager not available")
+    
+    all_jobs = queue_manager.get_all_jobs()
+    
+    # Filter by status if provided
+    if status:
+        try:
+            job_status = JobStatus(status)
+            all_jobs = [job for job in all_jobs if job.status == job_status]
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    
+    # Apply pagination
+    total_count = len(all_jobs)
+    jobs = all_jobs[offset:offset+limit]
+    
+    # Count by status
+    running_count = len([job for job in all_jobs if job.status == JobStatus.RUNNING])
+    completed_count = len([job for job in all_jobs if job.status == JobStatus.COMPLETED])
+    failed_count = len([job for job in all_jobs if job.status == JobStatus.FAILED])
+    
+    return JobListResponse(
+        jobs=[job.to_dict() for job in jobs],
+        total_count=total_count,
+        running_count=running_count,
+        completed_count=completed_count,
+        failed_count=failed_count
+    )
+
+
+@app.get("/api/queue/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    """Get detailed status of a specific job"""
+    if not queue_manager:
+        raise HTTPException(status_code=503, detail="Queue manager not available")
+    
+    job = queue_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return job.to_dict()
+
+
+@app.post("/api/queue/jobs/{job_id}/control")
+async def control_job(job_id: str, request: JobControlRequest):
+    """Control job execution (pause/resume/cancel/retry)"""
+    if not queue_manager:
+        raise HTTPException(status_code=503, detail="Queue manager not available")
+    
+    action = request.action.lower()
+    success = False
+    message = ""
+    
+    if action == "pause":
+        success = await queue_manager.pause_job(job_id)
+        message = "Job paused" if success else "Failed to pause job"
+    elif action == "resume":
+        success = await queue_manager.resume_job(job_id)
+        message = "Job resumed" if success else "Failed to resume job"
+    elif action == "cancel":
+        success = await queue_manager.cancel_job(job_id)
+        message = "Job cancelled" if success else "Failed to cancel job"
+    elif action == "retry":
+        success = await queue_manager.retry_job(job_id)
+        message = "Job requeued for retry" if success else "Failed to retry job"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+    
+    if success:
+        # Broadcast status change
+        await progress_broadcaster.broadcast_job_status(job_id, action, {"message": message})
+    
+    return {
+        "success": success,
+        "message": message,
+        "job_id": job_id,
+        "action": action
+    }
+
+
+# Real-time Progress Endpoints
+
+@app.websocket("/api/progress/ws")
+async def websocket_progress(websocket: WebSocket):
+    """WebSocket endpoint for real-time progress updates"""
+    await progress_broadcaster.handle_websocket_connection(websocket)
+
+
+@app.get("/api/progress/sse")
+async def sse_progress(request: Request):
+    """Server-Sent Events endpoint for real-time progress updates"""
+    
+    def check_client_disconnection():
+        return request.is_disconnected()
+    
+    # Create SSE connection
+    queue = progress_broadcaster.connect_sse()
+    
+    async def generate():
+        try:
+            async for message in progress_broadcaster.generate_sse_stream(queue):
+                if await check_client_disconnection():
+                    break
+                yield message
+        except Exception as e:
+            logger.error(f"SSE stream error: {e}")
+        finally:
+            progress_broadcaster.disconnect_sse(queue)
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
+
+@app.get("/api/progress/stats")
+async def get_progress_stats():
+    """Get progress broadcasting statistics"""
+    return progress_broadcaster.get_connection_stats()
+
+
 @app.get("/api")
 async def api_info():
     """API information endpoint"""
     return {
         "name": "TTS Tool API",
         "version": "1.0.0",
-        "description": "豆包TTS音频生成工具API",
+        "description": "豆包TTS音频生成工具API - Enhanced with Queue Management",
         "docs_url": "/docs",
         "health_url": "/health",
         "endpoints": {
             "generate": "/api/tts/generate",
             "batch": "/api/tts/batch", 
             "voices": "/api/voices",
-            "config": "/api/config"
-        }
+            "config": "/api/config",
+            "queue_status": "/api/queue/status",
+            "jobs": "/api/queue/jobs",
+            "job_control": "/api/queue/jobs/{job_id}/control",
+            "websocket_progress": "/api/progress/ws",
+            "sse_progress": "/api/progress/sse"
+        },
+        "features": [
+            "Advanced job queue management",
+            "Real-time progress updates via WebSocket/SSE",
+            "Job pause/resume/cancel functionality",
+            "Configurable concurrency control (1-5)",
+            "Automatic retry with exponential backoff",
+            "Job history and status tracking",
+            "Persistent job state across restarts"
+        ]
     }
 
 
