@@ -13,7 +13,9 @@ from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.tts_service import TTSService, TTSServiceError, TTSAPIError, TTSConfigError
@@ -71,6 +73,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files and templates
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
 # Request/Response Models
@@ -474,10 +480,17 @@ async def update_config(request: ConfigUpdateRequest):
         raise HTTPException(status_code=500, detail=f"Failed to update config: {str(e)}")
 
 
-# Root endpoint
-@app.get("/")
-async def root():
-    """Root endpoint with API information"""
+# Root endpoint - serve the web interface
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    """Serve the main web interface"""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+# API info endpoint
+@app.get("/api")
+async def api_info():
+    """API information endpoint"""
     return {
         "name": "TTS Tool API",
         "version": "1.0.0",
