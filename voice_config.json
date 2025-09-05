@@ -1,0 +1,965 @@
+{
+  "online_voices": {
+    "chinese": {
+      "general": [
+        {
+          "name": "灿灿 2.0",
+          "voice_type": "BV700_V2_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "愉悦", "抱歉", "嗔怪", "开心", "愤怒", "惊讶", "厌恶", "悲伤", "害怕", "哭腔", "客服", "专业", "严肃", "傲娇", "安慰鼓励", "绿茶", "娇媚", "情感电台", "撒娇", "瑜伽", "讲故事"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "炀炀",
+          "voice_type": "BV705_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "自然对话", "愉悦", "抱歉", "嗔怪", "安慰鼓励", "讲故事"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "擎苍 2.0",
+          "voice_type": "BV701_V2_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白-舒缓", "旁白-沉浸", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶", "哭腔"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "通用女声 2.0",
+          "voice_type": "BV001_V2_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "灿灿",
+          "voice_type": "BV700_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "愉悦", "抱歉", "嗔怪", "开心", "愤怒", "惊讶", "厌恶", "悲伤", "害怕", "哭腔", "客服", "专业", "严肃", "傲娇", "安慰鼓励", "绿茶", "娇媚", "情感电台", "撒娇", "瑜伽", "讲故事"],
+          "languages": ["中文", "英语", "日语", "葡语", "西语", "印尼"]
+        },
+        {
+          "name": "超自然音色-梓梓2.0",
+          "voice_type": "BV406_V2_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "超自然音色-梓梓",
+          "voice_type": "BV406_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "超自然音色-燃燃2.0",
+          "voice_type": "BV407_V2_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "超自然音色-燃燃",
+          "voice_type": "BV407_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "通用女声",
+          "voice_type": "BV001_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶", "助手", "客服", "安慰鼓励", "广告", "讲故事"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "通用男声",
+          "voice_type": "BV002_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        }
+      ],
+      "audiobook": [
+        {
+          "name": "擎苍",
+          "voice_type": "BV701_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白-舒缓", "旁白-沉浸", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶", "哭腔"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "阳光青年",
+          "voice_type": "BV123_streaming",
+          "timestamp_support": true,
+          "emotions": ["平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "反卷青年",
+          "voice_type": "BV120_streaming",
+          "timestamp_support": true,
+          "emotions": ["平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "通用赘婿",
+          "voice_type": "BV119_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "古风少御",
+          "voice_type": "BV115_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "霸气青叔",
+          "voice_type": "BV107_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "质朴青年",
+          "voice_type": "BV100_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "温柔淑女",
+          "voice_type": "BV104_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "开朗青年",
+          "voice_type": "BV004_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "甜宠少御",
+          "voice_type": "BV113_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "儒雅青年",
+          "voice_type": "BV102_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        }
+      ],
+      "assistant": [
+        {
+          "name": "甜美小源",
+          "voice_type": "BV405_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "愉悦", "抱歉", "专业", "严肃"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "亲切女声",
+          "voice_type": "BV007_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "知性女声",
+          "voice_type": "BV009_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "愉悦", "抱歉", "专业", "严肃"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "诚诚",
+          "voice_type": "BV419_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "童童",
+          "voice_type": "BV415_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "亲切男声",
+          "voice_type": "BV008_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "愉悦", "抱歉", "专业", "严肃"],
+          "languages": ["中文"]
+        }
+      ],
+      "video": [
+        {
+          "name": "译制片男声",
+          "voice_type": "BV408_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "懒小羊",
+          "voice_type": "BV426_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "清新文艺女声",
+          "voice_type": "BV428_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "鸡汤女声",
+          "voice_type": "BV403_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "智慧老者",
+          "voice_type": "BV158_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "慈爱姥姥",
+          "voice_type": "BV157_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "说唱小哥",
+          "voice_type": "BR001_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "活力解说男",
+          "voice_type": "BV410_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "影视解说小帅",
+          "voice_type": "BV411_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "解说小帅-多情感",
+          "voice_type": "BV437_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "影视解说小美",
+          "voice_type": "BV412_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "纨绔青年",
+          "voice_type": "BV159_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "直播一姐",
+          "voice_type": "BV418_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "沉稳解说男",
+          "voice_type": "BV142_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "潇洒青年",
+          "voice_type": "BV143_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "阳光男声",
+          "voice_type": "BV056_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "活泼女声",
+          "voice_type": "BV005_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "小萝莉",
+          "voice_type": "BV064_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        }
+      ],
+      "special": [
+        {
+          "name": "奶气萌娃",
+          "voice_type": "BV051_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "动漫海绵",
+          "voice_type": "BV063_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "动漫海星",
+          "voice_type": "BV417_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "动漫小新",
+          "voice_type": "BV050_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "天才童声",
+          "voice_type": "BV061_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        }
+      ],
+      "advertising": [
+        {
+          "name": "促销男声",
+          "voice_type": "BV401_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "促销女声",
+          "voice_type": "BV402_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "磁性男声",
+          "voice_type": "BV006_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        }
+      ],
+      "news": [
+        {
+          "name": "新闻女声",
+          "voice_type": "BV011_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "新闻男声",
+          "voice_type": "BV012_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        }
+      ],
+      "education": [
+        {
+          "name": "知性姐姐-双语",
+          "voice_type": "BV034_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文", "英文"]
+        },
+        {
+          "name": "温柔小哥",
+          "voice_type": "BV033_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        }
+      ]
+    },
+    "multilingual": {
+      "english_us": [
+        {
+          "name": "慵懒女声-Ava",
+          "voice_type": "BV511_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["英语"]
+        },
+        {
+          "name": "议论女声-Alicia",
+          "voice_type": "BV505_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["英语"]
+        },
+        {
+          "name": "情感女声-Lawrence",
+          "voice_type": "BV138_streaming",
+          "timestamp_support": true,
+          "emotions": ["旁白", "平和", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["英语"]
+        },
+        {
+          "name": "美式女声-Amelia",
+          "voice_type": "BV027_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["英语"]
+        },
+        {
+          "name": "讲述女声-Amanda",
+          "voice_type": "BV502_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["英语"]
+        },
+        {
+          "name": "活力女声-Ariana",
+          "voice_type": "BV503_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["英语"]
+        },
+        {
+          "name": "活力男声-Jackson",
+          "voice_type": "BV504_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["英语"]
+        },
+        {
+          "name": "天才少女",
+          "voice_type": "BV421_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文", "英语", "日语", "葡语", "西语", "印尼语", "越南语", "泰语"]
+        },
+        {
+          "name": "Stefan",
+          "voice_type": "BV702_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文", "英语", "日语", "葡语", "西语", "印尼语"]
+        },
+        {
+          "name": "天真萌娃-Lily",
+          "voice_type": "BV506_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["英语"]
+        }
+      ],
+      "english_uk": [
+        {
+          "name": "亲切女声-Anna",
+          "voice_type": "BV040_streaming",
+          "timestamp_support": true,
+          "emotions": ["通用", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["英语"]
+        }
+      ],
+      "english_au": [
+        {
+          "name": "澳洲男声-Henry",
+          "voice_type": "BV516_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["英语"]
+        }
+      ],
+      "japanese": [
+        {
+          "name": "元气少女",
+          "voice_type": "BV520_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["日语"]
+        },
+        {
+          "name": "萌系少女",
+          "voice_type": "BV521_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["日语"]
+        },
+        {
+          "name": "气质女声",
+          "voice_type": "BV522_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["日语"]
+        },
+        {
+          "name": "日语男声",
+          "voice_type": "BV524_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["日语"]
+        }
+      ],
+      "portuguese": [
+        {
+          "name": "活力男声Carlos（巴西地区）",
+          "voice_type": "BV531_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["葡萄牙语"]
+        },
+        {
+          "name": "活力女声（巴西地区）",
+          "voice_type": "BV530_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["葡萄牙语"]
+        }
+      ],
+      "spanish": [
+        {
+          "name": "气质御姐（墨西哥地区）",
+          "voice_type": "BV065_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["西班牙语"]
+        }
+      ],
+      "thai": [
+        {
+          "name": "天才少女",
+          "voice_type": "BV421_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["泰语"]
+        }
+      ],
+      "vietnamese": [
+        {
+          "name": "天才少女",
+          "voice_type": "BV421_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["越南语"]
+        }
+      ],
+      "indonesian": [
+        {
+          "name": "天才少女",
+          "voice_type": "BV421_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["印尼语"]
+        },
+        {
+          "name": "Stefan",
+          "voice_type": "BV702_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["印尼语"]
+        },
+        {
+          "name": "灿灿",
+          "voice_type": "BV700_streaming",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["印尼语"]
+        }
+      ]
+    },
+    "dialects": [
+      {
+        "name": "东北老铁",
+        "voice_type": "BV021_streaming",
+        "timestamp_support": true,
+        "dialect": "东北话",
+        "languages": ["东北话"]
+      },
+      {
+        "name": "东北丫头",
+        "voice_type": "BV020_streaming",
+        "timestamp_support": true,
+        "dialect": "东北话",
+        "languages": ["东北话"]
+      },
+      {
+        "name": "方言灿灿",
+        "voice_type": "BV704_streaming",
+        "timestamp_support": true,
+        "dialect": "多方言",
+        "languages": ["中文", "东北", "粤语", "上海", "西安", "成都", "台普", "广西普通话"]
+      },
+      {
+        "name": "西安佟掌柜",
+        "voice_type": "BV210_streaming",
+        "timestamp_support": true,
+        "dialect": "西安话",
+        "languages": ["西安话"]
+      },
+      {
+        "name": "沪上阿姐",
+        "voice_type": "BV217_streaming",
+        "timestamp_support": true,
+        "dialect": "上海话",
+        "languages": ["上海话"]
+      },
+      {
+        "name": "广西表哥",
+        "voice_type": "BV213_streaming",
+        "timestamp_support": true,
+        "dialect": "广西普通话",
+        "languages": ["广西普通话"]
+      },
+      {
+        "name": "甜美台妹",
+        "voice_type": "BV025_streaming",
+        "timestamp_support": true,
+        "dialect": "台湾普通话",
+        "languages": ["台湾普通话"]
+      },
+      {
+        "name": "台普男声",
+        "voice_type": "BV227_streaming",
+        "timestamp_support": true,
+        "dialect": "台湾普通话",
+        "languages": ["台湾普通话"]
+      },
+      {
+        "name": "港剧男神",
+        "voice_type": "BV026_streaming",
+        "timestamp_support": true,
+        "dialect": "粤语",
+        "languages": ["粤语"]
+      },
+      {
+        "name": "广东女仔",
+        "voice_type": "BV424_streaming",
+        "timestamp_support": true,
+        "dialect": "粤语",
+        "languages": ["粤语"]
+      },
+      {
+        "name": "相声演员",
+        "voice_type": "BV212_streaming",
+        "timestamp_support": false,
+        "dialect": "天津话",
+        "languages": ["天津话"]
+      },
+      {
+        "name": "重庆小伙",
+        "voice_type": "BV019_streaming",
+        "timestamp_support": true,
+        "dialect": "川渝话",
+        "languages": ["川渝话"]
+      },
+      {
+        "name": "四川甜妹儿",
+        "voice_type": "BV221_streaming",
+        "timestamp_support": false,
+        "dialect": "川渝话",
+        "languages": ["川渝话"]
+      },
+      {
+        "name": "重庆幺妹儿",
+        "voice_type": "BV423_streaming",
+        "timestamp_support": true,
+        "dialect": "川渝话",
+        "languages": ["川渝话"]
+      },
+      {
+        "name": "乡村企业家",
+        "voice_type": "BV214_streaming",
+        "timestamp_support": false,
+        "dialect": "郑州话",
+        "languages": ["郑州话"]
+      },
+      {
+        "name": "湖南妹坨",
+        "voice_type": "BV226_streaming",
+        "timestamp_support": true,
+        "dialect": "湖南普通话",
+        "languages": ["湖南普通话"]
+      },
+      {
+        "name": "长沙靓女",
+        "voice_type": "BV216_streaming",
+        "timestamp_support": true,
+        "dialect": "长沙话",
+        "languages": ["长沙话"]
+      }
+    ]
+  },
+  "offline_voices": {
+    "v4": [
+      {
+        "name": "灿灿",
+        "voice_type": "BV700_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "擎苍",
+        "voice_type": "BV701_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "通用女声",
+        "voice_type": "BV001_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "通用男声",
+        "voice_type": "BV002_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "开朗青年",
+        "voice_type": "BV004_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "温柔淑女",
+        "voice_type": "BV104_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "活力女声-Ariana",
+        "voice_type": "BV503_streaming",
+        "timestamp_support": true,
+        "language": "英语"
+      }
+    ],
+    "v5": [
+      {
+        "name": "灿灿",
+        "voice_type": "BV700_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文",
+        "emotions": ["通用", "愉悦", "抱歉", "嗔怪", "开心", "愤怒", "惊讶", "厌恶", "悲伤", "害怕", "哭腔", "客服", "专业", "严肃", "傲娇", "安慰鼓励", "绿茶", "娇媚", "情感电台", "撒娇", "瑜伽", "讲故事"]
+      },
+      {
+        "name": "擎苍",
+        "voice_type": "BV701_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "通用女声",
+        "voice_type": "BV001_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "通用男声",
+        "voice_type": "BV002_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "甜美小源",
+        "voice_type": "BV405_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "懒小羊",
+        "voice_type": "BV426_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "小萝莉",
+        "voice_type": "BV064_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "超自然音色-梓梓",
+        "voice_type": "BV406_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "超自然音色-燃燃",
+        "voice_type": "BV407_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "天才童声",
+        "voice_type": "BV061_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "儒雅青年",
+        "voice_type": "BV102_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "开朗青年",
+        "voice_type": "BV004_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "阳光青年",
+        "voice_type": "BV123_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "霸气青叔",
+        "voice_type": "BV107_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "知性女生",
+        "voice_type": "BV009_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "质朴青年",
+        "voice_type": "BV100_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "甜宠少御",
+        "voice_type": "BV113_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "古风少御",
+        "voice_type": "BV115_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "通用赘婿",
+        "voice_type": "BV119_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "憨厚青年",
+        "voice_type": "BV120_24k_streaming",
+        "timestamp_support": true,
+        "language": "中文"
+      },
+      {
+        "name": "活力女声-Ariana",
+        "voice_type": "BV503_24k_streaming",
+        "timestamp_support": true,
+        "language": "英语"
+      },
+      {
+        "name": "情感女声-Lawrence",
+        "voice_type": "BV138_24k_streaming",
+        "timestamp_support": true,
+        "language": "英语"
+      }
+    ]
+  },
+  "emotion_mapping": {
+    "客服": "customer_service",
+    "专业": "professional",
+    "严肃": "serious",
+    "旁白-舒缓": "narrator",
+    "旁白-沉浸": "narrator_immersive",
+    "安慰鼓励": "comfort",
+    "撒娇": "lovey-dovey",
+    "可爱元气": "energetic",
+    "绿茶": "conniving",
+    "傲娇": "tsundere",
+    "娇媚": "charming",
+    "讲故事": "storytelling",
+    "情感电台": "radio",
+    "瑜伽": "yoga",
+    "广告": "advertising",
+    "助手": "assistant",
+    "自然对话": "chat",
+    "愉悦": "pleased",
+    "抱歉": "sorry",
+    "嗔怪": "annoyed",
+    "开心": "happy",
+    "悲伤": "sad",
+    "愤怒": "angry",
+    "害怕": "scare",
+    "厌恶": "hate",
+    "惊讶": "surprise",
+    "哭腔": "tear",
+    "平和": "novel_dialog"
+  },
+  "language_mapping": {
+    "中文": "cn",
+    "英语": "en",
+    "日语": "ja",
+    "泰语": "thth",
+    "越南语": "vivn",
+    "印尼语": "id",
+    "葡萄牙语": "ptbr",
+    "西班牙语": "esmx",
+    "东北": "zh_dongbei",
+    "粤语": "zh_yueyu",
+    "上海": "zh_shanghai",
+    "西安": "zh_xian",
+    "成都": "zh_chengdu",
+    "台湾普通话": "zh_taipu",
+    "广西普通话": "zh_guangxi"
+  }
+}
