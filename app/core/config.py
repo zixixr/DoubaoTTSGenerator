@@ -4,7 +4,11 @@ Application Configuration
 
 import os
 from typing import Optional
-from pydantic import BaseSettings
+
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    from pydantic import BaseSettings
 
 class Settings(BaseSettings):
     """Application settings"""
@@ -36,9 +40,17 @@ class Settings(BaseSettings):
     tts_host: str = "openspeech.bytedance.com"
     tts_endpoint: str = "/api/v1/tts"
     
+    # Additional environment variables that may be present
+    ark_api_key: Optional[str] = None
+    volcengine_ark_api_key: Optional[str] = None
+    volcengine_ark_base_url: Optional[str] = None
+    cluster: Optional[str] = None
+    voice_type: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "allow"  # Allow extra fields from environment
         
     @property
     def tts_api_url(self) -> str:
