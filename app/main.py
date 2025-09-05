@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, WebSocket
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, WebSocket, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,9 @@ from app.services.tts_service import TTSService, TTSServiceError, TTSAPIError, T
 from app.services.queue_manager import QueueManager, BatchJob, JobStatus, JobPriority
 from app.services.progress_broadcaster import get_progress_broadcaster
 from app.services.file_manager import FileManager
+from app.services.config_manager import ConfigManager, ConfigurationError
+from app.services.usage_tracker import UsageTracker, UsageRecord, CostConfig
+from app.services.cost_control import CostController, CostControlConfig, LimitCheckResult
 from app.core.config import settings
 
 # Configure logging
@@ -36,17 +39,59 @@ logger = logging.getLogger(__name__)
 tts_service: Optional[TTSService] = None
 queue_manager: Optional[QueueManager] = None
 file_manager: Optional[FileManager] = None
+config_manager: Optional[ConfigManager] = None
+usage_tracker: Optional[UsageTracker] = None
+cost_controller: Optional[CostController] = None
 progress_broadcaster = get_progress_broadcaster()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    global tts_service, queue_manager, file_manager
+    global tts_service, queue_manager, file_manager, config_manager, usage_tracker, cost_controller
     
     try:
         # Startup
         logger.info("Starting TTS Tool application...")
+        
+        # Initialize Configuration Manager
+        config_paths = {
+            "tts_config": "tts_config.json",
+            "voice_config": "voice_config.json"
+        }
+        
+        # Define validation schema for configurations
+        validation_schema = {
+            "tts_config": {
+                "required": ["app", "audio", "request"],
+                "types": {
+                    "app": dict,
+                    "audio": dict,
+                    "request": dict
+                }
+            }
+        }
+        
+        config_manager = ConfigManager(config_paths, validation_schema)
+        await config_manager.start()
+        logger.info("Configuration manager initialized with hot-reload")
+        
+        # Initialize Usage Tracker
+        usage_tracker = UsageTracker(
+            db_path="./usage_data.db",
+            cost_config=CostConfig()
+        )
+        logger.info("Usage tracker initialized successfully")
+        
+        # Initialize Cost Controller
+        cost_control_config = CostControlConfig(
+            soft_limit_1000=True,
+            hard_limit_5000=True,
+            base_cost_per_char=0.001,
+            show_cost_estimates=True
+        )
+        cost_controller = CostController(cost_control_config, usage_tracker)
+        logger.info("Cost controller initialized successfully")
         
         # Initialize File Manager
         file_manager = FileManager(
@@ -62,6 +107,18 @@ async def lifespan(app: FastAPI):
         tts_service = TTSService(file_manager=file_manager)
         await tts_service.start()
         logger.info("TTS service initialized successfully")
+        
+        # Setup configuration change callback
+        def on_config_change(config_name: str, new_config: Dict[str, Any]):
+            logger.info(f"Configuration '{config_name}' changed, reloading TTS service...")
+            if config_name in ["tts_config", "voice_config"] and tts_service:
+                try:
+                    tts_service.reload_config()
+                    logger.info("TTS service configuration reloaded successfully")
+                except Exception as e:
+                    logger.error(f"Failed to reload TTS service config: {e}")
+        
+        config_manager.add_change_callback(on_config_change)
         
         # Initialize Queue Manager
         queue_manager = QueueManager(
@@ -82,6 +139,8 @@ async def lifespan(app: FastAPI):
             await queue_manager.stop()
         if tts_service:
             await tts_service.close()
+        if config_manager:
+            await config_manager.stop()
         await progress_broadcaster.shutdown()
         logger.info("TTS Tool application shutdown complete")
 
@@ -121,6 +180,8 @@ class TTSRequest(BaseModel):
     pitch_ratio: float = Field(1.0, ge=0.1, le=3.0, description="音调")
     emotion: Optional[str] = Field(None, description="情感/风格")
     language: Optional[str] = Field(None, description="语言")
+    session_id: Optional[str] = Field(None, description="会话ID")
+    confirmation_token: Optional[str] = Field(None, description="确认令牌")
     
     @field_validator('text')
     @classmethod
@@ -176,6 +237,8 @@ class TTSResponse(BaseModel):
     voice_type: Optional[str] = None
     encoding: Optional[str] = None
     audio_data: Optional[str] = None  # Base64 encoded audio for direct response
+    confirmation_token: Optional[str] = None  # For confirmation requirements
+    cost_estimate: Optional[float] = None  # Estimated cost
 
 
 class BatchTTSResponse(BaseModel):
@@ -340,42 +403,129 @@ async def health_check():
 
 @app.post("/api/tts/generate", response_model=TTSResponse)
 async def generate_tts(request: TTSRequest):
-    """Generate TTS audio for single text"""
-    if not tts_service:
-        raise HTTPException(status_code=503, detail="TTS service not available")
+    """Generate TTS audio for single text with cost control"""
+    if not tts_service or not cost_controller or not usage_tracker:
+        raise HTTPException(status_code=503, detail="Services not available")
     
     try:
-        logger.info(f"Generating TTS for text: {request.text[:50]}...")
+        # Generate session ID if not provided
+        session_id = request.session_id or str(uuid.uuid4())
         
-        # Generate audio bytes
-        audio_bytes = await tts_service.synthesize_speech(
+        logger.info(f"Generating TTS for text: {request.text[:50]}... (Session: {session_id})")
+        
+        # Check cost limits and character constraints
+        limit_check = await cost_controller.check_limits(
             text=request.text,
-            voice_type=request.voice_type,
+            session_id=session_id,
+            voice_type=request.voice_type or "",
             encoding=request.encoding,
-            speed_ratio=request.speed_ratio,
-            volume_ratio=request.volume_ratio,
-            pitch_ratio=request.pitch_ratio,
-            emotion=request.emotion,
-            language=request.language
+            language=request.language or "",
+            confirmation_token=request.confirmation_token
         )
         
-        # Count characters
-        char_info = tts_service.count_characters(request.text)
+        # Handle limit violations
+        if not limit_check.allowed:
+            if limit_check.requires_confirmation:
+                # Return confirmation requirement
+                return TTSResponse(
+                    success=False,
+                    message=f"Confirmation required: {limit_check.limit_exceeded.message if limit_check.limit_exceeded else 'Unknown limit'}",
+                    confirmation_token=limit_check.confirmation_token,
+                    cost_estimate=limit_check.cost_estimate.estimated_cost if limit_check.cost_estimate else None,
+                    text_length=limit_check.cost_estimate.character_count if limit_check.cost_estimate else len(request.text)
+                )
+            else:
+                # Hard limit or quota exceeded
+                error_msg = "Request blocked"
+                if limit_check.limit_exceeded:
+                    error_msg = limit_check.limit_exceeded.message
+                elif limit_check.quota_info:
+                    error_msg = limit_check.quota_info.get('message', 'Quota exceeded')
+                
+                raise HTTPException(status_code=400, detail=error_msg)
         
-        # Return audio data as base64 for direct use
-        import base64
-        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        # Generate request ID for tracking
+        request_id = str(uuid.uuid4())
+        start_time = time.time()
         
-        return TTSResponse(
-            success=True,
-            message="TTS generation successful",
-            file_size=len(audio_bytes),
-            text_length=char_info['total_chars'],
-            voice_type=request.voice_type or tts_service.config['audio']['voice_type'],
-            encoding=request.encoding,
-            audio_data=audio_b64
-        )
+        try:
+            # Generate audio bytes
+            audio_bytes = await tts_service.synthesize_speech(
+                text=request.text,
+                voice_type=request.voice_type,
+                encoding=request.encoding,
+                speed_ratio=request.speed_ratio,
+                volume_ratio=request.volume_ratio,
+                pitch_ratio=request.pitch_ratio,
+                emotion=request.emotion,
+                language=request.language
+            )
+            
+            processing_time = time.time() - start_time
+            
+            # Count characters
+            char_info = tts_service.count_characters(request.text)
+            
+            # Track usage
+            usage_record = UsageRecord(
+                request_id=request_id,
+                text=request.text,
+                text_length=char_info['total_chars'],
+                utf8_bytes=char_info['utf8_bytes'],
+                voice_type=request.voice_type or tts_service.config['audio']['voice_type'],
+                encoding=request.encoding,
+                language=request.language or "",
+                emotion=request.emotion or "",
+                success=True,
+                processing_time=processing_time,
+                file_size=len(audio_bytes),
+                session_id=session_id,
+                user_id="default"
+            )
+            
+            await usage_tracker.track_usage(usage_record)
+            
+            # Return audio data as base64 for direct use
+            import base64
+            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+            
+            return TTSResponse(
+                success=True,
+                message="TTS generation successful",
+                file_size=len(audio_bytes),
+                text_length=char_info['total_chars'],
+                synthesis_time=processing_time,
+                voice_type=request.voice_type or tts_service.config['audio']['voice_type'],
+                encoding=request.encoding,
+                audio_data=audio_b64
+            )
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            
+            # Track failed usage
+            char_info = tts_service.count_characters(request.text)
+            usage_record = UsageRecord(
+                request_id=request_id,
+                text=request.text,
+                text_length=char_info['total_chars'],
+                utf8_bytes=char_info['utf8_bytes'],
+                voice_type=request.voice_type or "",
+                encoding=request.encoding,
+                language=request.language or "",
+                emotion=request.emotion or "",
+                success=False,
+                error_message=str(e),
+                processing_time=processing_time,
+                session_id=session_id,
+                user_id="default"
+            )
+            
+            await usage_tracker.track_usage(usage_record)
+            raise
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"TTS generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
@@ -781,7 +931,7 @@ async def get_filename_templates():
 
 
 @app.post("/api/files/cleanup")
-async def cleanup_old_files(days: int = 30):
+async def cleanup_old_files(days: int = Query(30, description="Number of days to keep")):
     """Clean up old files and metadata"""
     if not file_manager:
         raise HTTPException(status_code=503, detail="File manager not available")
@@ -852,13 +1002,298 @@ async def get_file_management_config():
         raise HTTPException(status_code=500, detail=f"Failed to get config: {str(e)}")
 
 
+# Configuration Management Endpoints
+
+class ConfigReloadRequest(BaseModel):
+    """Configuration reload request"""
+    config_name: Optional[str] = Field(None, description="Specific config to reload (optional)")
+
+class ConfigUpdateRequest(BaseModel):
+    """Configuration update request"""
+    config_name: str = Field(..., description="Configuration name")
+    updates: Dict[str, Any] = Field(..., description="Configuration updates")
+    save_to_file: bool = Field(True, description="Save changes to file")
+
+class UsageStatsRequest(BaseModel):
+    """Usage statistics request"""
+    start_date: Optional[str] = Field(None, description="Start date (YYYY-MM-DD)")
+    end_date: Optional[str] = Field(None, description="End date (YYYY-MM-DD)")
+    session_id: Optional[str] = Field(None, description="Filter by session ID")
+    user_id: Optional[str] = Field(None, description="Filter by user ID")
+
+class CostEstimateRequest(BaseModel):
+    """Cost estimation request"""
+    text: str = Field(..., description="Text to estimate cost for")
+    voice_type: str = Field("", description="Voice type")
+    encoding: str = Field("mp3", description="Audio encoding")
+    language: str = Field("", description="Language")
+
+class ConfirmationRequest(BaseModel):
+    """Confirmation request"""
+    confirmation_token: str = Field(..., description="Confirmation token")
+    session_id: str = Field(..., description="Session ID")
+
+@app.get("/api/config/info")
+async def get_config_info():
+    """Get configuration information and status"""
+    if not config_manager:
+        raise HTTPException(status_code=503, detail="Configuration manager not available")
+    
+    try:
+        return config_manager.get_config_info()
+    except Exception as e:
+        logger.error(f"Failed to get config info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/config/history")
+async def get_config_history(config_name: Optional[str] = None, limit: int = 20):
+    """Get configuration change history"""
+    if not config_manager:
+        raise HTTPException(status_code=503, detail="Configuration manager not available")
+    
+    try:
+        return config_manager.get_config_history(config_name, limit)
+    except Exception as e:
+        logger.error(f"Failed to get config history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/config/reload")
+async def reload_config(request: ConfigReloadRequest):
+    """Reload configuration files"""
+    if not config_manager:
+        raise HTTPException(status_code=503, detail="Configuration manager not available")
+    
+    try:
+        if request.config_name:
+            # Reload specific config (would need to implement this in ConfigManager)
+            config_manager.reload_config()
+            message = f"Configuration '{request.config_name}' reloaded successfully"
+        else:
+            config_manager.reload_config()
+            message = "All configurations reloaded successfully"
+        
+        return {"success": True, "message": message}
+    except Exception as e:
+        logger.error(f"Failed to reload config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/config/update")
+async def update_configuration(request: ConfigUpdateRequest):
+    """Update configuration programmatically"""
+    if not config_manager:
+        raise HTTPException(status_code=503, detail="Configuration manager not available")
+    
+    try:
+        success = config_manager.update_config(
+            request.config_name, 
+            request.updates, 
+            request.save_to_file
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Configuration '{request.config_name}' updated successfully",
+                "updates": request.updates
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update configuration")
+            
+    except Exception as e:
+        logger.error(f"Failed to update configuration: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/config/validate")
+async def validate_configurations():
+    """Validate all configurations"""
+    if not config_manager:
+        raise HTTPException(status_code=503, detail="Configuration manager not available")
+    
+    try:
+        results = config_manager.validate_all_configs()
+        all_valid = all(result['valid'] for result in results.values())
+        
+        return {
+            "all_valid": all_valid,
+            "results": results,
+            "total_configs": len(results),
+            "valid_configs": sum(1 for r in results.values() if r['valid'])
+        }
+    except Exception as e:
+        logger.error(f"Failed to validate configurations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Usage Statistics Endpoints
+
+@app.get("/api/usage/stats")
+async def get_usage_statistics(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None
+):
+    """Get usage statistics"""
+    if not usage_tracker:
+        raise HTTPException(status_code=503, detail="Usage tracker not available")
+    
+    try:
+        stats = await usage_tracker.get_usage_stats(start_date, end_date, session_id, user_id)
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get usage stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/usage/current")
+async def get_current_usage(session_id: str):
+    """Get current session usage"""
+    if not usage_tracker:
+        raise HTTPException(status_code=503, detail="Usage tracker not available")
+    
+    try:
+        usage = await usage_tracker.get_current_usage(session_id)
+        return usage
+    except Exception as e:
+        logger.error(f"Failed to get current usage: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/usage/records")
+async def get_usage_records(
+    limit: int = 100,
+    offset: int = 0,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    session_id: Optional[str] = None
+):
+    """Get paginated usage records"""
+    if not usage_tracker:
+        raise HTTPException(status_code=503, detail="Usage tracker not available")
+    
+    try:
+        records = await usage_tracker.get_usage_records(limit, offset, start_date, end_date, session_id)
+        return {
+            "records": records,
+            "limit": limit,
+            "offset": offset,
+            "count": len(records)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get usage records: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/usage/cleanup")
+async def cleanup_usage_data(days_to_keep: int = Query(90, description="Days to keep usage data")):
+    """Clean up old usage records"""
+    if not usage_tracker:
+        raise HTTPException(status_code=503, detail="Usage tracker not available")
+    
+    try:
+        result = await usage_tracker.cleanup_old_records(days_to_keep)
+        return result
+    except Exception as e:
+        logger.error(f"Failed to cleanup usage data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Cost Control Endpoints
+
+@app.post("/api/cost/estimate")
+async def estimate_cost(request: CostEstimateRequest):
+    """Estimate cost for text synthesis"""
+    if not cost_controller:
+        raise HTTPException(status_code=503, detail="Cost controller not available")
+    
+    try:
+        estimate = cost_controller.calculate_cost_estimate(
+            request.text, request.voice_type, request.encoding, request.language
+        )
+        
+        return {
+            "character_count": estimate.character_count,
+            "utf8_bytes": estimate.utf8_bytes,
+            "estimated_cost": estimate.estimated_cost,
+            "voice_multiplier": estimate.voice_multiplier,
+            "encoding_multiplier": estimate.encoding_multiplier,
+            "language_multiplier": estimate.language_multiplier,
+            "warnings": estimate.warnings
+        }
+    except Exception as e:
+        logger.error(f"Failed to estimate cost: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cost/limits")
+async def get_cost_limits():
+    """Get current cost limits and quotas"""
+    if not cost_controller:
+        raise HTTPException(status_code=503, detail="Cost controller not available")
+    
+    try:
+        return cost_controller.get_limits_info()
+    except Exception as e:
+        logger.error(f"Failed to get cost limits: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cost/confirmation/{session_id}")
+async def get_confirmation_info(session_id: str):
+    """Get pending confirmation information"""
+    if not cost_controller:
+        raise HTTPException(status_code=503, detail="Cost controller not available")
+    
+    try:
+        info = cost_controller.get_confirmation_info(session_id)
+        if not info:
+            raise HTTPException(status_code=404, detail="No pending confirmation found")
+        
+        return info
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get confirmation info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/cost/confirm")
+async def confirm_request(request: ConfirmationRequest):
+    """Confirm a pending request"""
+    if not cost_controller:
+        raise HTTPException(status_code=503, detail="Cost controller not available")
+    
+    try:
+        # Validate the confirmation token
+        confirmation_info = cost_controller.get_confirmation_info(request.session_id)
+        if not confirmation_info:
+            raise HTTPException(status_code=404, detail="No pending confirmation found")
+        
+        if confirmation_info['token'] != request.confirmation_token:
+            raise HTTPException(status_code=400, detail="Invalid confirmation token")
+        
+        return {
+            "success": True,
+            "message": "Request confirmed successfully",
+            "confirmation_token": request.confirmation_token
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to confirm request: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cost/stats")
+async def get_cost_stats():
+    """Get cost control statistics"""
+    if not cost_controller:
+        raise HTTPException(status_code=503, detail="Cost controller not available")
+    
+    try:
+        return cost_controller.get_stats()
+    except Exception as e:
+        logger.error(f"Failed to get cost stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api")
 async def api_info():
     """API information endpoint"""
     return {
         "name": "TTS Tool API",
         "version": "1.0.0",
-        "description": "豆包TTS音频生成工具API - Enhanced with Queue Management and File Management",
+        "description": "豆包TTS音频生成工具API - Enhanced with Configuration Management, Cost Control, and Usage Tracking",
         "docs_url": "/docs",
         "health_url": "/health",
         "endpoints": {
@@ -875,7 +1310,21 @@ async def api_info():
             "batch_mapping": "/api/files/batch-mapping",
             "filename_templates": "/api/files/templates",
             "file_cleanup": "/api/files/cleanup",
-            "file_config": "/api/files/config"
+            "file_config": "/api/files/config",
+            "config_info": "/api/config/info",
+            "config_history": "/api/config/history",
+            "config_reload": "/api/config/reload",
+            "config_update": "/api/config/update",
+            "config_validate": "/api/config/validate",
+            "usage_stats": "/api/usage/stats",
+            "current_usage": "/api/usage/current",
+            "usage_records": "/api/usage/records",
+            "usage_cleanup": "/api/usage/cleanup",
+            "cost_estimate": "/api/cost/estimate",
+            "cost_limits": "/api/cost/limits",
+            "cost_confirmation": "/api/cost/confirmation/{session_id}",
+            "cost_confirm": "/api/cost/confirm",
+            "cost_stats": "/api/cost/stats"
         },
         "features": [
             "Advanced job queue management",
@@ -889,7 +1338,16 @@ async def api_info():
             "File deduplication using MD5 hashes",
             "Directory organization by date/voice/language",
             "Batch filename mapping and preview",
-            "File cleanup and maintenance tools"
+            "File cleanup and maintenance tools",
+            "Configuration hot-reload without restart",
+            "Usage tracking with SQLite database",
+            "Character count and cost estimation",
+            "1000-character confirmation dialog",
+            "5000-character hard limit enforcement",
+            "Daily/monthly usage quotas",
+            "Comprehensive usage statistics and reporting",
+            "Configuration validation and error handling",
+            "Real-time cost control and limits"
         ]
     }
 
