@@ -64,11 +64,10 @@ class TTSApp {
             this.updateCharCount();
         });
         
-        // File upload
-        this.setupFileUpload();
         
         // Batch processing
         document.getElementById('add-batch-item').addEventListener('click', () => this.addBatchItem());
+        document.getElementById('clear-batch-items').addEventListener('click', () => this.clearBatchItems());
         
         // Audio parameters
         this.setupParameterControls();
@@ -84,8 +83,20 @@ class TTSApp {
         document.getElementById('cancel-settings').addEventListener('click', () => this.closeSettings());
         document.getElementById('save-settings').addEventListener('click', () => this.saveSettings());
         
-        // Directory browsing
-        document.getElementById('browse-dir').addEventListener('click', () => this.browseDirectory());
+        
+        // File upload for direct input
+        document.getElementById('upload-file-btn').addEventListener('click', () => {
+            document.getElementById('file-input').click();
+        });
+        document.getElementById('file-input').addEventListener('change', (e) => this.handleFileUpload(e));
+        
+        // Single result actions
+        document.getElementById('play-single').addEventListener('click', () => this.playSingleAudio());
+        document.getElementById('download-single').addEventListener('click', () => this.downloadSingleAudio());
+        
+        // Batch operations
+        document.getElementById('download-completed').addEventListener('click', () => this.downloadCompletedBatchItems());
+        document.getElementById('download-all-zip').addEventListener('click', () => this.downloadBatchAsZip());
         
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => this.handleKeyboardShortcuts(e));
@@ -99,45 +110,6 @@ class TTSApp {
         this.updateParameterDisplays();
     }
     
-    /**
-     * Setup file upload functionality
-     */
-    setupFileUpload() {
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
-        const selectBtn = document.getElementById('select-file-btn');
-        const removeBtn = document.getElementById('remove-file');
-        
-        // Drag and drop
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-        
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-        
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.handleFileSelect(files[0]);
-            }
-        });
-        
-        // File input
-        selectBtn.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                this.handleFileSelect(e.target.files[0]);
-            }
-        });
-        
-        // Remove file
-        removeBtn.addEventListener('click', () => this.removeFile());
-    }
     
     /**
      * Setup parameter controls (sliders)
@@ -158,6 +130,15 @@ class TTSApp {
         // Voice selection
         document.getElementById('voice-select').addEventListener('change', (e) => {
             this.updateEmotionOptions(e.target.value);
+        });
+        
+        // Sampling rate selection
+        document.getElementById('sample-rate-select').addEventListener('change', (e) => {
+            const sampleRate = this.validateSampleRate(e.target.value);
+            // Update the select value to ensure it's valid
+            if (sampleRate !== parseInt(e.target.value)) {
+                e.target.value = sampleRate.toString();
+            }
         });
     }
     
@@ -186,7 +167,6 @@ class TTSApp {
         
         const contentMap = {
             'tab-text': 'text-input-tab',
-            'tab-file': 'file-input-tab',
             'tab-batch': 'batch-input-tab'
         };
         
@@ -230,14 +210,16 @@ class TTSApp {
     }
     
     /**
-     * Handle file selection
+     * Handle file upload for direct input
      */
-    async handleFileSelect(file) {
+    async handleFileUpload(event) {
+        const file = event.target.files[0];
         if (!file) return;
         
         // Validate file
-        if (!file.name.endsWith('.txt')) {
-            this.showNotification('只支持 .txt 格式文件', 'error');
+        const extension = file.name.toLowerCase().split('.').pop();
+        if (!['txt', 'md'].includes(extension)) {
+            this.showNotification('只支持 .txt 和 .md 格式文件', 'error');
             return;
         }
         
@@ -249,19 +231,18 @@ class TTSApp {
         try {
             const text = await this.readFileAsText(file);
             
-            // Show file info
-            document.getElementById('file-name').textContent = file.name;
-            document.getElementById('file-info').classList.remove('hidden');
-            
             // Update text input
             document.getElementById('text-input').value = text;
             this.updateCharCount();
             
-            this.showNotification('文件上传成功', 'success');
+            this.showNotification(`已加载 ${file.name}`, 'success');
         } catch (error) {
             console.error('File read error:', error);
             this.showNotification('文件读取失败', 'error');
         }
+        
+        // Clear the input so the same file can be selected again
+        event.target.value = '';
     }
     
     /**
@@ -277,62 +258,311 @@ class TTSApp {
     }
     
     /**
-     * Remove uploaded file
+     * Show single generation result
      */
-    removeFile() {
-        document.getElementById('file-info').classList.add('hidden');
-        document.getElementById('file-input').value = '';
-        document.getElementById('text-input').value = '';
-        this.updateCharCount();
+    showSingleResult(data) {
+        // Store current result
+        this.currentSingleResult = data;
+        
+        // Update UI
+        document.getElementById('single-filename').textContent = data.filename;
+        document.getElementById('single-audio').src = data.audioUrl;
+        document.getElementById('single-result').classList.remove('hidden');
+    }
+    
+    /**
+     * Play single audio result
+     */
+    playSingleAudio() {
+        const audio = document.getElementById('single-audio');
+        if (audio.src) {
+            if (audio.paused) {
+                audio.play();
+                document.getElementById('play-single').innerHTML = '<i class="fas fa-pause mr-1"></i>暂停';
+            } else {
+                audio.pause();
+                document.getElementById('play-single').innerHTML = '<i class="fas fa-play mr-1"></i>播放';
+            }
+        }
+    }
+    
+    /**
+     * Download single audio result
+     */
+    downloadSingleAudio() {
+        if (this.currentSingleResult && this.currentSingleResult.audioBlob) {
+            const url = URL.createObjectURL(this.currentSingleResult.audioBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = this.currentSingleResult.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
     }
     
     /**
      * Add batch item
      */
-    addBatchItem(text = '', filename = '') {
-        const container = document.getElementById('batch-items');
-        const index = container.children.length + 1;
+    addBatchItem(text = '', filename = '', status = '待处理', errorMsg = '') {
+        const tbody = document.getElementById('batch-items');
+        const index = tbody.children.length + 1;
         
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'batch-item bg-gray-50 p-4 rounded-lg border';
-        itemDiv.innerHTML = `
-            <div class="flex items-start space-x-3">
-                <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">文本 #${index}</label>
-                        <textarea class="batch-text w-full p-2 border border-gray-300 rounded text-sm" 
-                                  placeholder="输入文本..." maxlength="1000" rows="2">${text}</textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">文件名 (可选)</label>
-                        <input type="text" class="batch-filename w-full p-2 border border-gray-300 rounded text-sm" 
-                               placeholder="自定义文件名..." value="${filename}">
-                    </div>
-                </div>
-                <button class="remove-batch-item text-error hover:text-red-700 p-1" title="删除">
-                    <i class="fas fa-times"></i>
+        // Hide empty state
+        document.getElementById('batch-empty-state').style.display = 'none';
+        document.getElementById('batch-table').parentElement.style.display = 'block';
+        
+        const row = document.createElement('tr');
+        row.className = 'batch-item hover:bg-gray-50';
+        
+        // Determine status styling
+        let statusClass = 'text-gray-600';
+        let statusIcon = 'fas fa-clock';
+        if (status === '完成') {
+            statusClass = 'text-green-600';
+            statusIcon = 'fas fa-check-circle';
+        } else if (status === '错误' || errorMsg) {
+            statusClass = 'text-red-600';
+            statusIcon = 'fas fa-exclamation-circle';
+            status = '错误';
+        } else if (status === '处理中') {
+            statusClass = 'text-blue-600';
+            statusIcon = 'fas fa-spinner fa-spin';
+        }
+        
+        // Download button content
+        const downloadButton = status === '完成' ? 
+            `<button class="download-batch-item text-green-600 hover:text-green-800 text-sm" title="下载">
+                <i class="fas fa-download"></i>
+            </button>` : 
+            `<span class="text-gray-400 text-sm">-</span>`;
+        
+        row.innerHTML = `
+            <td class="border border-gray-300 px-4 py-2 text-center text-sm font-medium text-gray-700">${index}</td>
+            <td class="border border-gray-300 px-2 py-1">
+                <textarea class="batch-text w-full p-2 border-0 resize-none text-sm bg-transparent" 
+                          placeholder="输入文本内容..." maxlength="1000" rows="2" 
+                          title="${errorMsg}">${text}</textarea>
+            </td>
+            <td class="border border-gray-300 px-2 py-1">
+                <input type="text" class="batch-filename w-full p-2 border-0 text-sm bg-transparent" 
+                       placeholder="自定义文件名" value="${filename}">
+            </td>
+            <td class="border border-gray-300 px-4 py-2 text-center">
+                <span class="batch-status ${statusClass} text-sm">
+                    <i class="${statusIcon}"></i>
+                    <span class="ml-1">${status}</span>
+                </span>
+            </td>
+            <td class="border border-gray-300 px-4 py-2 text-center">
+                ${downloadButton}
+            </td>
+            <td class="border border-gray-300 px-4 py-2 text-center">
+                <button class="remove-batch-item text-red-600 hover:text-red-800 text-sm" title="删除">
+                    <i class="fas fa-trash"></i>
                 </button>
-            </div>
+            </td>
         `;
         
         // Add event listener for remove button
-        itemDiv.querySelector('.remove-batch-item').addEventListener('click', () => {
-            itemDiv.remove();
+        row.querySelector('.remove-batch-item').addEventListener('click', () => {
+            row.remove();
             this.updateBatchIndices();
+            this.updateBatchOperationsVisibility();
         });
         
-        container.appendChild(itemDiv);
+        // Add event listener for download button if it exists
+        const downloadBtn = row.querySelector('.download-batch-item');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', () => {
+                this.downloadBatchItem(row);
+            });
+        }
+        
+        tbody.appendChild(row);
+        this.updateBatchOperationsVisibility();
+    }
+    
+    /**
+     * Download individual batch item
+     */
+    downloadBatchItem(row) {
+        const filename = row.querySelector('.batch-filename').value || 'audio.mp3';
+        const fileData = row.fileData; // This will be set when item completes
+        
+        if (fileData) {
+            const a = document.createElement('a');
+            a.href = fileData.url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } else {
+            this.showNotification('文件数据不可用', 'error');
+        }
+    }
+    
+    /**
+     * Update batch operations visibility and counts
+     */
+    updateBatchOperationsVisibility() {
+        const rows = document.querySelectorAll('#batch-items .batch-item');
+        const completedRows = Array.from(rows).filter(row => 
+            row.querySelector('.batch-status').textContent.includes('完成')
+        );
+        
+        document.getElementById('completed-count').textContent = completedRows.length;
+        
+        if (completedRows.length > 0) {
+            document.getElementById('batch-operations').classList.remove('hidden');
+        } else {
+            document.getElementById('batch-operations').classList.add('hidden');
+        }
+    }
+    
+    /**
+     * Download all completed batch items
+     */
+    downloadCompletedBatchItems() {
+        const rows = document.querySelectorAll('#batch-items .batch-item');
+        const completedRows = Array.from(rows).filter(row => 
+            row.querySelector('.batch-status').textContent.includes('完成') && row.fileData
+        );
+        
+        if (completedRows.length === 0) {
+            this.showNotification('没有可下载的文件', 'warning');
+            return;
+        }
+        
+        completedRows.forEach(row => {
+            this.downloadBatchItem(row);
+        });
+        
+        this.showNotification(`开始下载 ${completedRows.length} 个文件`, 'success');
+    }
+    
+    /**
+     * Download batch items as ZIP
+     */
+    async downloadBatchAsZip() {
+        const rows = document.querySelectorAll('#batch-items .batch-item');
+        const completedRows = Array.from(rows).filter(row => 
+            row.querySelector('.batch-status').textContent.includes('完成')
+        );
+        
+        if (completedRows.length === 0) {
+            this.showNotification('没有可下载的文件', 'warning');
+            return;
+        }
+        
+        try {
+            this.showNotification('正在准备ZIP文件...', 'info');
+            
+            // Here you would typically call a backend API to create a ZIP file
+            // For now, we'll just download individual files
+            this.showNotification('ZIP打包功能需要后端支持，将分别下载各文件', 'info');
+            this.downloadCompletedBatchItems();
+            
+        } catch (error) {
+            console.error('ZIP download failed:', error);
+            this.showNotification('ZIP下载失败', 'error');
+        }
     }
     
     /**
      * Update batch item indices
      */
+    /**
+     * Clear all batch items
+     */
+    clearBatchItems() {
+        const tbody = document.getElementById('batch-items');
+        tbody.innerHTML = '';
+        
+        // Show empty state
+        document.getElementById('batch-empty-state').style.display = 'block';
+        document.getElementById('batch-table').parentElement.style.display = 'none';
+        
+        this.showNotification('已清空所有批量处理项目', 'info');
+    }
+    
     updateBatchIndices() {
-        const items = document.querySelectorAll('.batch-item');
-        items.forEach((item, index) => {
-            const label = item.querySelector('label');
-            label.textContent = `文本 #${index + 1}`;
+        const batchRows = document.querySelectorAll('#batch-items .batch-item');
+        batchRows.forEach((row, index) => {
+            const indexCell = row.querySelector('td:first-child');
+            if (indexCell) {
+                indexCell.textContent = index + 1;
+            }
         });
+        
+        // Show/hide empty state
+        if (batchRows.length === 0) {
+            document.getElementById('batch-empty-state').style.display = 'block';
+            document.getElementById('batch-table').parentElement.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Update batch item status
+     */
+    updateBatchItemStatus(index, status, errorMsg = '', fileData = null) {
+        const rows = document.querySelectorAll('#batch-items .batch-item');
+        if (rows[index]) {
+            const row = rows[index];
+            const statusSpan = row.querySelector('.batch-status');
+            const downloadCell = row.querySelectorAll('td')[4]; // Download column
+            
+            let statusClass = 'text-gray-600';
+            let statusIcon = 'fas fa-clock';
+            
+            if (status === '完成') {
+                statusClass = 'text-green-600';
+                statusIcon = 'fas fa-check-circle';
+                
+                // Update download button
+                downloadCell.innerHTML = `
+                    <button class="download-batch-item text-green-600 hover:text-green-800 text-sm" title="下载">
+                        <i class="fas fa-download"></i>
+                    </button>
+                `;
+                
+                // Add event listener for new download button
+                const downloadBtn = downloadCell.querySelector('.download-batch-item');
+                if (downloadBtn) {
+                    downloadBtn.addEventListener('click', () => {
+                        this.downloadBatchItem(row);
+                    });
+                }
+                
+                // Store file data in row
+                if (fileData) {
+                    row.fileData = fileData;
+                }
+                
+            } else if (status === '错误') {
+                statusClass = 'text-red-600';
+                statusIcon = 'fas fa-exclamation-circle';
+                downloadCell.innerHTML = '<span class="text-gray-400 text-sm">-</span>';
+            } else if (status === '处理中') {
+                statusClass = 'text-blue-600';
+                statusIcon = 'fas fa-spinner fa-spin';
+                downloadCell.innerHTML = '<span class="text-gray-400 text-sm">-</span>';
+            } else {
+                downloadCell.innerHTML = '<span class="text-gray-400 text-sm">-</span>';
+            }
+            
+            statusSpan.className = `batch-status ${statusClass} text-sm`;
+            statusSpan.innerHTML = `<i class="${statusIcon}"></i><span class="ml-1">${status}</span>`;
+            
+            if (errorMsg) {
+                const textarea = row.querySelector('.batch-text');
+                textarea.title = errorMsg;
+            }
+            
+            // Update batch operations visibility
+            this.updateBatchOperationsVisibility();
+        }
     }
     
     /**
@@ -529,21 +759,18 @@ class TTSApp {
                 const audioBlob = this.base64ToBlob(result.audio_data, 'audio/mpeg');
                 const audioUrl = URL.createObjectURL(audioBlob);
                 
-                // Show preview
-                this.showAudioPreview(audioUrl, result);
+                // Show single result area
+                this.showSingleResult({
+                    filename: result.file_name || `audio_${Date.now()}.${params.encoding}`,
+                    audioUrl: audioUrl,
+                    audioBlob: audioBlob,
+                    result: result
+                });
                 
                 // Auto-play if enabled
                 if (this.settings.autoPreview) {
                     this.playAudio(audioUrl);
                 }
-                
-                // Add to files list
-                this.addGeneratedFile({
-                    name: `audio_${Date.now()}.${params.encoding}`,
-                    size: result.file_size,
-                    url: audioUrl,
-                    info: result
-                });
                 
                 this.showNotification('音频生成成功', 'success');
             } else {
@@ -571,7 +798,7 @@ class TTSApp {
             return;
         }
         
-        const outputDir = document.getElementById('output-dir').value.trim() || './output';
+        const outputDir = './output'; // Fixed server-side output directory
         const filenameTemplate = document.getElementById('filename-template').value.trim();
         const maxConcurrent = this.settings.maxConcurrent;
         
@@ -579,13 +806,21 @@ class TTSApp {
             items: items,
             output_dir: outputDir,
             max_concurrent: maxConcurrent,
-            filename_template: filenameTemplate
+            filename_template: filenameTemplate,
+            max_retries: 3,
+            priority: "normal"
         };
         
         try {
-            this.showProgress(true, '正在批量生成音频...', 0);
+            this.showProgress(true, '正在提交批量任务...', 0);
             this.disableControls(true);
             
+            // Mark all items as processing
+            items.forEach((_, index) => {
+                this.updateBatchItemStatus(index, '等待中');
+            });
+            
+            // Submit batch job
             const response = await fetch(`${this.apiURL}/tts/batch`, {
                 method: 'POST',
                 headers: {
@@ -601,32 +836,24 @@ class TTSApp {
             
             const result = await response.json();
             
-            this.showProgress(true, '批量生成完成', 100);
-            
-            // Process results
-            if (result.results && result.results.length > 0) {
-                result.results.forEach((item, index) => {
-                    if (item.success && item.file_path) {
-                        this.addGeneratedFile({
-                            name: item.file_name || `batch_${index + 1}.mp3`,
-                            size: item.file_size || 0,
-                            path: item.file_path,
-                            info: item
-                        });
-                    }
-                });
+            if (result.success && result.job_id) {
+                this.showProgress(true, '任务已提交，正在处理...', 10);
+                this.currentJobId = result.job_id;
+                
+                // Start SSE connection to monitor progress
+                this.setupSSEConnection(result.job_id);
+                
+                // Show job submitted notification
+                this.showNotification(`批量任务已提交 (${result.total_items}个项目)`, 'info');
+            } else {
+                throw new Error(result.message || '任务提交失败');
             }
-            
-            const message = `批量生成完成: 成功 ${result.completed} / 失败 ${result.failed}`;
-            this.showNotification(message, result.completed > 0 ? 'success' : 'warning');
             
         } catch (error) {
             console.error('Batch TTS generation failed:', error);
             this.showNotification(`批量生成失败: ${error.message}`, 'error');
             this.showProgress(false);
-        } finally {
             this.disableControls(false);
-            setTimeout(() => this.showProgress(false), 2000);
         }
     }
     
@@ -689,9 +916,26 @@ class TTSApp {
     }
     
     /**
+     * Validate and get sampling rate value
+     */
+    validateSampleRate(value) {
+        const validRates = [8000, 16000, 24000];
+        const intValue = parseInt(value);
+        
+        if (validRates.includes(intValue)) {
+            return intValue;
+        }
+        
+        // Default to 24000 Hz if invalid value
+        console.warn(`Invalid sample rate: ${value}, defaulting to 24000`);
+        return 24000;
+    }
+
+    /**
      * Get current audio parameters
      */
     getAudioParameters() {
+        const sampleRate = this.validateSampleRate(document.getElementById('sample-rate-select').value);
         return {
             voice_type: document.getElementById('voice-select').value || null,
             encoding: document.getElementById('format-select').value,
@@ -699,6 +943,7 @@ class TTSApp {
             volume_ratio: parseFloat(document.getElementById('volume-slider').value),
             pitch_ratio: parseFloat(document.getElementById('pitch-slider').value),
             emotion: document.getElementById('emotion-select').value || null,
+            sampling_rate: sampleRate,
             language: null // Could add language selection later
         };
     }
@@ -708,11 +953,11 @@ class TTSApp {
      */
     getBatchItems() {
         const items = [];
-        const batchItems = document.querySelectorAll('.batch-item');
+        const batchRows = document.querySelectorAll('#batch-items .batch-item');
         
-        batchItems.forEach(item => {
-            const text = item.querySelector('.batch-text').value.trim();
-            const filename = item.querySelector('.batch-filename').value.trim();
+        batchRows.forEach(row => {
+            const text = row.querySelector('.batch-text').value.trim();
+            const filename = row.querySelector('.batch-filename').value.trim();
             
             if (text) {
                 const params = this.getAudioParameters();
@@ -958,12 +1203,44 @@ class TTSApp {
         document.getElementById('settings-modal').classList.remove('flex');
     }
     
+    
+    
     /**
-     * Directory browsing (placeholder - would need backend support)
+     * Load files from selected directory into batch processing
      */
-    browseDirectory() {
-        this.showNotification('目录浏览功能需要后端支持', 'info');
+    loadFilesToBatch(files) {
+        // Clear existing batch items
+        document.getElementById('batch-items').innerHTML = '';
+        
+        // Filter text files
+        const textFiles = Array.from(files).filter(file => {
+            const extension = file.name.toLowerCase().split('.').pop();
+            return ['txt', 'md', 'text'].includes(extension);
+        });
+        
+        if (textFiles.length === 0) {
+            this.showNotification('所选目录中没有找到文本文件 (.txt, .md)', 'warning');
+            return;
+        }
+        
+        // Switch to batch processing tab
+        document.querySelector('[data-tab="batch-input"]').click();
+        
+        // Process each text file
+        textFiles.forEach(async (file, index) => {
+            try {
+                const text = await this.readFileAsText(file);
+                const filename = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
+                this.addBatchItem(text, filename);
+            } catch (error) {
+                console.error(`Error reading file ${file.name}:`, error);
+                this.addBatchItem('', file.name, '错误', `无法读取文件: ${error.message}`);
+            }
+        });
+        
+        this.showNotification(`已加载 ${textFiles.length} 个文本文件到批量处理`, 'success');
     }
+    
     
     /**
      * Update voices count display
@@ -1011,6 +1288,187 @@ class TTSApp {
         tooltips.forEach(element => {
             // Could add custom tooltip implementation here
         });
+    }
+
+    /**
+     * Load template info
+     */
+    async loadTemplateInfo() {
+        try {
+            console.log('Loading template info...');
+        } catch (error) {
+            console.warn('Failed to load template info:', error);
+        }
+    }
+
+    /**
+     * Load file stats
+     */
+    async loadFileStats() {
+        try {
+            console.log('Loading file stats...');
+        } catch (error) {
+            console.warn('Failed to load file stats:', error);
+        }
+    }
+
+    /**
+     * Setup SSE connection for real-time updates
+     */
+    setupSSEConnection(jobId) {
+        try {
+            if (this.sseConnection) {
+                this.sseConnection.close();
+            }
+            
+            console.log('Setting up SSE connection for job:', jobId);
+            this.sseConnection = new EventSource(`${this.apiURL}/progress/sse`);
+            
+            this.sseConnection.onopen = () => {
+                console.log('SSE connection established');
+            };
+            
+            this.sseConnection.onmessage = (event) => {
+                try {
+                    console.log('Raw SSE message:', event.data);
+                    const data = JSON.parse(event.data);
+                    console.log('Parsed SSE data:', data);
+                    this.handleProgressUpdate(data);
+                } catch (error) {
+                    console.error('Failed to parse SSE message:', error, 'Raw data:', event.data);
+                }
+            };
+            
+            this.sseConnection.onerror = (error) => {
+                console.error('SSE connection error:', error);
+                // Try to reconnect after 5 seconds
+                setTimeout(() => {
+                    if (this.currentJobId && this.sseConnection.readyState === EventSource.CLOSED) {
+                        this.setupSSEConnection(this.currentJobId);
+                    }
+                }, 5000);
+            };
+            
+        } catch (error) {
+            console.warn('Failed to setup SSE connection:', error);
+        }
+    }
+    
+    handleProgressUpdate(data) {
+        console.log('Progress update:', data);
+        
+        // Handle different message types
+        if (data.type === 'progress') {
+            // Filter events for current job
+            if (!this.currentJobId || data.data?.job_id !== this.currentJobId) {
+                return;
+            }
+            
+            // Check for specific actions
+            if (data.data?.action === 'item_completed') {
+                // Handle individual item completion
+                const itemIndex = data.data?.item_index;
+                console.log('Item completed:', itemIndex, data.data);
+                
+                if (itemIndex !== undefined) {
+                    if (data.data?.success) {
+                        // Create file download data
+                        const fileData = {
+                            url: `${this.apiURL}/files/${encodeURIComponent(data.data?.file_name)}`,
+                            filename: data.data?.file_name,
+                            size: data.data?.file_size
+                        };
+                        
+                        console.log('Updating item status to completed:', itemIndex, fileData);
+                        this.updateBatchItemStatus(itemIndex, '完成', '', fileData);
+                    } else {
+                        console.log('Updating item status to error:', itemIndex, data.data?.error);
+                        this.updateBatchItemStatus(itemIndex, '错误', data.data?.error || '生成失败');
+                    }
+                }
+            } else if (data.data?.action === 'item_started') {
+                // Handle item start
+                const itemIndex = data.data?.item_index;
+                if (itemIndex !== undefined) {
+                    console.log('Item started:', itemIndex);
+                    this.updateBatchItemStatus(itemIndex, '处理中');
+                }
+            }
+            
+            // Handle progress update from queue manager
+            const progress = data.data?.progress || 0;
+            const completed = data.data?.completed_count || 0;
+            const failed = data.data?.failed_count || 0;
+            const total = data.data?.total_count || 0;
+            
+            // Update progress display
+            const message = `正在处理... (${completed + failed}/${total})`;
+            this.showProgress(true, message, progress);
+            
+            // Check if job is completed
+            if (data.data?.status === 'completed') {
+                this.handleBatchCompletion({
+                    completed: completed,
+                    failed: failed,
+                    total: total
+                });
+            } else if (data.data?.status === 'failed') {
+                this.handleBatchError('批量处理失败');
+            }
+            
+        } else {
+            // Handle other message types (job_status, system, etc.)
+            switch (data.type) {
+                case 'job_status':
+                    if (data.data?.job_id === this.currentJobId) {
+                        if (data.data?.status === 'completed') {
+                            this.handleBatchCompletion(data.data);
+                        } else if (data.data?.status === 'failed') {
+                            this.handleBatchError(data.data?.error || '批量处理失败');
+                        }
+                    }
+                    break;
+                    
+                case 'system':
+                    console.log('System message:', data.data?.message);
+                    break;
+            }
+        }
+    }
+    
+    handleBatchCompletion(data) {
+        const completed = data?.completed || 0;
+        const failed = data?.failed || 0;
+        const total = completed + failed;
+        
+        this.showProgress(true, '批量生成完成', 100);
+        this.showNotification(`批量生成完成: 成功 ${completed} / 失败 ${failed}`, 
+                             completed > 0 ? 'success' : 'warning');
+        
+        // Clean up
+        this.currentJobId = null;
+        this.disableControls(false);
+        if (this.sseConnection) {
+            this.sseConnection.close();
+            this.sseConnection = null;
+        }
+        
+        // File list refresh not needed in new design
+        
+        setTimeout(() => this.showProgress(false), 3000);
+    }
+    
+    handleBatchError(error) {
+        this.showNotification(`批量生成失败: ${error}`, 'error');
+        this.showProgress(false);
+        this.disableControls(false);
+        
+        // Clean up
+        this.currentJobId = null;
+        if (this.sseConnection) {
+            this.sseConnection.close();
+            this.sseConnection = null;
+        }
     }
 }
 

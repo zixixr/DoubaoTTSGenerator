@@ -148,7 +148,8 @@ class BatchJob:
                 volume_ratio=item_data.get('volume_ratio', 1.0),
                 pitch_ratio=item_data.get('pitch_ratio', 1.0),
                 emotion=item_data.get('emotion'),
-                language=item_data.get('language')
+                language=item_data.get('language'),
+                sampling_rate=item_data.get('sampling_rate', 24000)
             )
             items.append(item)
         
@@ -551,6 +552,9 @@ class QueueManager:
                 use_file_manager = hasattr(job.tts_service, 'file_manager') and job.tts_service.file_manager is not None
                 
                 if use_file_manager:
+                    # Let file manager handle extension logic
+                    custom_filename = item.filename
+                    
                     # Use file manager for advanced file handling
                     result = await job.tts_service.synthesize_to_file(
                         text=item.text,
@@ -558,14 +562,17 @@ class QueueManager:
                         voice_type=item.params.get('voice_type'),
                         encoding=item.params.get('encoding', 'mp3'),
                         use_file_manager=True,
-                        custom_filename=item.filename,
+                        custom_filename=custom_filename,
                         filename_template=job.params.get('filename_template'),
                         speed_ratio=item.params.get('speed_ratio', 1.0),
                         volume_ratio=item.params.get('volume_ratio', 1.0),
                         pitch_ratio=item.params.get('pitch_ratio', 1.0),
                         emotion=item.params.get('emotion'),
-                        language=item.params.get('language')
+                        language=item.params.get('language'),
+                        sample_rate=item.params.get('sampling_rate', 24000)  # Map sampling_rate to sample_rate
                     )
+                    # Debug log
+                    self.logger.info(f"Queue processing item: sampling_rate from params = {item.params.get('sampling_rate', 'NOT_FOUND')}, mapped to sample_rate = {item.params.get('sampling_rate', 24000)}")
                 else:
                     # Legacy filename generation (fallback)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -596,11 +603,28 @@ class QueueManager:
                         volume_ratio=item.params.get('volume_ratio', 1.0),
                         pitch_ratio=item.params.get('pitch_ratio', 1.0),
                         emotion=item.params.get('emotion'),
-                        language=item.params.get('language')
+                        language=item.params.get('language'),
+                        sample_rate=item.params.get('sampling_rate', 24000)  # Map sampling_rate to sample_rate
                     )
                 
                 item.mark_completed(result)
                 job.completed_count += 1
+                
+                # Notify individual item completion
+                if job.progress_callback:
+                    job.progress_callback({
+                        'job_id': job.job_id,
+                        'action': 'item_completed',
+                        'item_index': item.index,
+                        'success': True,
+                        'file_path': result.get('file_path') if result else None,
+                        'file_name': Path(result.get('file_path')).name if result and result.get('file_path') else None,
+                        'file_size': result.get('file_size') if result else None,
+                        'completed_count': job.completed_count,
+                        'failed_count': job.failed_count,
+                        'total_count': len(job.items),
+                        'progress': (job.completed_count + job.failed_count) / len(job.items) * 100
+                    })
                 
             except Exception as e:
                 item.retry_count += 1
@@ -619,6 +643,20 @@ class QueueManager:
                     item.mark_failed(str(e))
                     job.failed_count += 1
                     self.logger.error(f"Job {job.job_id} item {item.index} failed permanently: {e}")
+                    
+                    # Notify individual item failure
+                    if job.progress_callback:
+                        job.progress_callback({
+                            'job_id': job.job_id,
+                            'action': 'item_completed',
+                            'item_index': item.index,
+                            'success': False,
+                            'error': str(e),
+                            'completed_count': job.completed_count,
+                            'failed_count': job.failed_count,
+                            'total_count': len(job.items),
+                            'progress': (job.completed_count + job.failed_count) / len(job.items) * 100
+                        })
             
             finally:
                 job.current_concurrent -= 1
