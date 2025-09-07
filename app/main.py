@@ -452,7 +452,7 @@ async def generate_tts(request: TTSRequest):
         start_time = time.time()
         
         try:
-            # Generate audio bytes
+            # Generate audio bytes with session_id for file isolation
             audio_bytes = await tts_service.synthesize_speech(
                 text=request.text,
                 voice_type=request.voice_type,
@@ -462,7 +462,8 @@ async def generate_tts(request: TTSRequest):
                 volume_ratio=request.volume_ratio,
                 pitch_ratio=request.pitch_ratio,
                 emotion=request.emotion,
-                language=request.language
+                language=request.language,
+                session_id=session_id  # Pass session_id for directory isolation
             )
             
             processing_time = time.time() - start_time

@@ -9,6 +9,7 @@ This module provides comprehensive file management functionality including:
 - File organization by date/voice/language categories
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -464,10 +465,24 @@ class FileManager:
         # Get organized directory
         output_dir = self.organizer.get_output_path(context)
         
-        # Ensure directory exists
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Add session/batch subdirectory for isolation
+        # Use batch_id if available (for batch processing)
+        # Otherwise use a timestamp-based session directory
+        if 'batch_id' in context:
+            session_dir = output_dir / f"batch_{context['batch_id']}"
+        elif 'session_id' in context:
+            session_dir = output_dir / f"session_{context['session_id']}"
+        else:
+            # Use timestamp for single file generation
+            # Format: YYYYMMDD_HHMMSS_microseconds (last 3 digits)
+            timestamp = datetime.now()
+            session_id = timestamp.strftime('%Y%m%d_%H%M%S') + f"_{timestamp.microsecond // 1000:03d}"
+            session_dir = output_dir / f"session_{session_id}"
         
-        return output_dir / filename
+        # Ensure directory exists
+        session_dir.mkdir(parents=True, exist_ok=True)
+        
+        return session_dir / filename
     
     async def resolve_file_conflicts(self, file_path: Path) -> Path:
         """
@@ -521,10 +536,26 @@ class FileManager:
         try:
             encoding = context.get('encoding', 'mp3')
             
+            # Debug logging - trigger reload
+            self.logger.info(f"File manager debug - custom_filename: {custom_filename}, encoding: {encoding}")
+            
             # Get output path
             output_path = await self.get_output_path(
                 context, custom_filename, template, encoding
             )
+            
+            self.logger.info(f"File manager debug - output_path before extension check: {output_path}")
+            
+            # Ensure output path always has the correct extension
+            expected_ext = f".{encoding.lower()}"
+            if encoding.lower() == 'pcm':
+                expected_ext = '.wav'
+            
+            if not str(output_path).endswith(expected_ext):
+                output_path = Path(str(output_path) + expected_ext)
+                self.logger.info(f"Added missing extension to output path: {output_path}")
+            else:
+                self.logger.info(f"File manager debug - output_path already has correct extension: {output_path}")
             
             # Resolve conflicts
             final_path = await self.resolve_file_conflicts(output_path)
@@ -558,9 +589,29 @@ class FileManager:
                         'duplicate_info': duplicate_info
                     }
                 else:
+                    # EXTENSION FIX: Apply extension fix before moving temp file
+                    expected_ext = f".{encoding.lower()}"
+                    if encoding.lower() == 'pcm':
+                        expected_ext = '.wav'
+                    
+                    if not str(final_path).endswith(expected_ext):
+                        original_path = final_path
+                        final_path = Path(str(final_path) + expected_ext)
+                        self.logger.info(f"DEDUP PATH FIX: Added extension {expected_ext} to {original_path} -> {final_path}")
+                    
                     # Move temp file to final location
                     await aiofiles.os.rename(temp_path, final_path)
             else:
+                # FINAL SAFEGUARD: Ensure file extension before saving
+                expected_ext = f".{encoding.lower()}"
+                if encoding.lower() == 'pcm':
+                    expected_ext = '.wav'
+                
+                if not str(final_path).endswith(expected_ext):
+                    original_path = final_path
+                    final_path = Path(str(final_path) + expected_ext)
+                    self.logger.info(f"FINAL FIX: Added extension {expected_ext} to {original_path} -> {final_path}")
+                
                 # Save directly
                 async with aiofiles.open(final_path, 'wb') as f:
                     await f.write(audio_data)
@@ -716,4 +767,3 @@ class FileManager:
 
 
 # Import for async initialization
-import asyncio

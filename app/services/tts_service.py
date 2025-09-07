@@ -383,7 +383,8 @@ class TTSService:
             try:
                 self.logger.info(f"Making TTS API request (attempt {attempt + 1}/{self.max_retries + 1})")
                 
-                async with self.session.post(url, json=request_data, headers=headers) as response:
+                # Send JSON data as raw string to match official demo exactly
+                async with self.session.post(url, data=json.dumps(request_data), headers=headers) as response:
                     response_text = await response.text()
                     
                     if response.status == 200:
@@ -432,7 +433,7 @@ class TTSService:
     def build_request_payload(self, text: str, voice_type: Optional[str] = None, 
                             encoding: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """
-        Build TTS API request payload
+        Build TTS API request payload matching official demo format
         
         Args:
             text: Text to synthesize
@@ -443,46 +444,39 @@ class TTSService:
         Returns:
             Request payload dictionary
         """
-        # Get base configuration
+        # Build minimal request payload matching official demo exactly
         request_data = {
-            'app': self.config['app'].copy(),
-            'user': self.config['user'].copy(),
-            'audio': self.config['audio'].copy(),
-            'request': self.config['request'].copy(),
+            "app": {
+                "appid": self.config['app']['appid'],
+                "token": "access_token",  # Use literal string as in demo
+                "cluster": self.config['app']['cluster']
+            },
+            "user": self.config['user'].copy(),
+            "audio": {
+                "voice_type": voice_type or self.config['audio']['voice_type'],
+                "encoding": encoding or self.config['audio']['encoding'],
+                "rate": kwargs.get('sample_rate', self.config['audio'].get('rate', 24000)),
+                "speed_ratio": kwargs.get('speed_ratio', self.config['audio'].get('speed_ratio', 1.0)),
+                "volume_ratio": kwargs.get('volume_ratio', self.config['audio'].get('volume_ratio', 1.0)),
+                "pitch_ratio": kwargs.get('pitch_ratio', self.config['audio'].get('pitch_ratio', 1.0)),
+            },
+            "request": {
+                "reqid": str(uuid.uuid4()),
+                "text": text,
+                "text_type": "plain",
+                "operation": "query",
+                "with_frontend": 1,
+                "frontend_type": "unitTson"
+            }
         }
         
-        # Add extra parameters if present
-        if 'extra_param' in self.config:
-            request_data['extra_param'] = self.config['extra_param'].copy()
-        
-        # Override with provided parameters
-        if voice_type:
-            request_data['audio']['voice_type'] = voice_type
-        
-        if encoding:
-            request_data['audio']['encoding'] = encoding
-        
-        # Update audio parameters
-        audio_params = ['speed_ratio', 'volume_ratio', 'pitch_ratio', 'rate', 'compression_rate', 'emotion', 'language']
-        for param in audio_params:
-            if param in kwargs:
-                request_data['audio'][param] = kwargs[param]
-        
-        # Update request parameters
-        request_params = ['text_type', 'silence_duration', 'with_frontend', 'frontend_type', 
-                         'with_timestamp', 'split_sentence', 'pure_english_opt']
-        for param in request_params:
-            if param in kwargs:
-                request_data['request'][param] = kwargs[param]
-        
-        # Set text and generate request ID
-        request_data['request']['text'] = text
-        request_data['request']['reqid'] = str(uuid.uuid4())
+        # Debug: Log the rate being sent to API 
+        self.logger.info(f"TTS API request - rate: {request_data['audio']['rate']}Hz, sample_rate in kwargs: {kwargs.get('sample_rate', 'NOT_PROVIDED')}")
         
         return request_data
     
     async def synthesize_speech(self, text: str, voice_type: Optional[str] = None,
-                              encoding: str = "mp3", **kwargs) -> bytes:
+                              encoding: str = "mp3", sample_rate: Optional[int] = None, **kwargs) -> bytes:
         """
         Synthesize speech from text
         
@@ -504,6 +498,9 @@ class TTSService:
             raise TTSServiceError(f"Text validation failed: {error_msg}")
         
         # Build request payload
+        # Include sample_rate in kwargs if provided
+        if sample_rate is not None:
+            kwargs['sample_rate'] = sample_rate
         request_data = self.build_request_payload(text, voice_type, encoding, **kwargs)
         
         # Make API request
@@ -546,7 +543,21 @@ class TTSService:
         final_file_path = output_path
         file_manager_result = None
         
+        # ULTIMATE EXTENSION FIX: Ensure output_path has proper extension BEFORE any processing
+        expected_ext = f".{encoding.lower()}"
+        if encoding.lower() == 'pcm':
+            expected_ext = '.wav'
+        
+        if not str(output_path).lower().endswith(expected_ext):
+            original_path = output_path
+            output_path = f"{output_path}{expected_ext}"
+            final_file_path = output_path  # Update final_file_path too
+            self.logger.info(f"ULTIMATE EXTENSION FIX: Added {expected_ext} to {original_path} -> {output_path}")
+        else:
+            self.logger.info(f"ULTIMATE DEBUG: Path already has extension: {output_path}")
+        
         # Use file manager if available and requested
+        self.logger.info(f"TTS debug - use_file_manager: {use_file_manager}, has_file_manager: {self.file_manager is not None}")
         if use_file_manager and self.file_manager:
             # Build context for file manager
             char_info = self.count_characters(text)
@@ -560,12 +571,19 @@ class TTSService:
                 'encoding': encoding,
                 'language': kwargs.get('language') or voice_info.get('languages', [''])[0] if voice_info.get('languages') else '',
                 'emotion': kwargs.get('emotion', ''),
-                'category': 'tts_generated'
+                'category': 'tts_generated',
+                # Add batch_id if provided (for batch processing isolation)
+                'batch_id': kwargs.get('batch_id') if kwargs.get('batch_id') else None,
+                # Add audio parameters to context for conflict resolution
+                'rate': kwargs.get('sample_rate', self.config.get('audio', {}).get('rate', 24000)),
+                'speed_ratio': kwargs.get('speed_ratio', 1.0),
+                'pitch_ratio': kwargs.get('pitch_ratio', 1.0),
+                'volume_ratio': kwargs.get('volume_ratio', 1.0)
             }
             
             # Save using file manager
             file_manager_result = await self.file_manager.save_file_with_management(
-                audio_bytes=audio_bytes,
+                audio_data=audio_bytes,
                 context=context,
                 custom_filename=custom_filename,
                 template=filename_template
@@ -580,6 +598,23 @@ class TTSService:
         
         # Direct file save (fallback or when not using file manager)
         if not use_file_manager or not file_manager_result or not file_manager_result['success']:
+            # DEBUG: Check what output_path we have
+            self.logger.info(f"TTS DEBUG: output_path before extension fix: {output_path}")
+            
+            # EXTENSION FIX: Ensure output path has proper extension
+            expected_ext = f".{encoding.lower()}"
+            if encoding.lower() == 'pcm':
+                expected_ext = '.wav'
+            
+            self.logger.info(f"TTS DEBUG: expected_ext: {expected_ext}, path ends with ext: {str(output_path).lower().endswith(expected_ext)}")
+            
+            if not str(output_path).lower().endswith(expected_ext):
+                original_path = output_path
+                output_path = f"{output_path}{expected_ext}"
+                self.logger.info(f"TTS EXTENSION FIX: Added {expected_ext} to {original_path} -> {output_path}")
+            else:
+                self.logger.info(f"TTS DEBUG: Path already has extension: {output_path}")
+            
             # Create output directory if needed
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             

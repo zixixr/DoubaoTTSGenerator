@@ -555,6 +555,9 @@ class QueueManager:
                     # Let file manager handle extension logic
                     custom_filename = item.filename
                     
+                    # Add batch_id to kwargs for file organization
+                    item.params['batch_id'] = job.job_id
+                    
                     # Use file manager for advanced file handling
                     result = await job.tts_service.synthesize_to_file(
                         text=item.text,
