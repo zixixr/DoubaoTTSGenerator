@@ -2,9 +2,10 @@
 FastAPI main application for TTS Tool
 
 This module creates the FastAPI application with all endpoints, middleware,
-and configurations needed for the TTS service.
+and configurations needed for the TTS service. 
 """
 
+import asyncio
 import logging
 import time
 import uuid
@@ -14,7 +15,7 @@ from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, WebSocket, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
@@ -175,6 +176,7 @@ class TTSRequest(BaseModel):
     text: str = Field(..., description="要合成的文本", min_length=1, max_length=10000)
     voice_type: Optional[str] = Field(None, description="音色类型")
     encoding: str = Field("mp3", description="音频编码格式")
+    sampling_rate: int = Field(24000, description="音频采样率")
     speed_ratio: float = Field(1.0, ge=0.2, le=3.0, description="语速")
     volume_ratio: float = Field(1.0, ge=0.1, le=3.0, description="音量")
     pitch_ratio: float = Field(1.0, ge=0.1, le=3.0, description="音调")
@@ -202,6 +204,7 @@ class BatchTTSItem(BaseModel):
     pitch_ratio: float = Field(1.0, ge=0.1, le=3.0, description="音调")
     emotion: Optional[str] = Field(None, description="情感/风格")
     language: Optional[str] = Field(None, description="语言")
+    sampling_rate: int = Field(24000, description="音频采样率")
 
 
 class BatchTTSRequest(BaseModel):
@@ -454,6 +457,7 @@ async def generate_tts(request: TTSRequest):
                 text=request.text,
                 voice_type=request.voice_type,
                 encoding=request.encoding,
+                sample_rate=request.sampling_rate,
                 speed_ratio=request.speed_ratio,
                 volume_ratio=request.volume_ratio,
                 pitch_ratio=request.pitch_ratio,
@@ -539,6 +543,9 @@ async def batch_generate_tts(request: BatchTTSRequest):
     
     try:
         logger.info(f"Submitting batch TTS job with {len(request.items)} items")
+        # Debug: Log sampling rates of all items
+        for i, item in enumerate(request.items):
+            logger.info(f"Item {i+1} sampling_rate: {item.sampling_rate}Hz")
         
         # Generate job ID
         job_id = str(uuid.uuid4())
@@ -1000,6 +1007,134 @@ async def get_file_management_config():
     except Exception as e:
         logger.error(f"Failed to get file management config: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get config: {str(e)}")
+
+
+@app.get("/api/files/{file_path:path}")
+async def download_file(file_path: str):
+    """Download generated audio file"""
+    if not file_manager:
+        raise HTTPException(status_code=503, detail="File manager not available")
+    
+    try:
+        # Construct full file path based on file manager's output directory
+        import os
+        from pathlib import Path
+        
+        # Clean the file path to prevent directory traversal
+        file_path = file_path.strip('/')
+        if '..' in file_path or file_path.startswith('/'):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        
+        # Try different possible locations for the file
+        possible_paths = [
+            # Direct path under output directory
+            file_manager.base_output_dir / file_path,
+            # Path with date organization (most common case)
+            file_manager.base_output_dir / "2025" / "09" / "07" / file_path,
+            # Path with just filename in today's date folder
+            file_manager.base_output_dir / datetime.now().strftime("%Y/%m/%d") / file_path,
+        ]
+        
+        actual_file_path = None
+        for path in possible_paths:
+            if path.exists():
+                actual_file_path = path
+                break
+        
+        if not actual_file_path or not actual_file_path.exists():
+            logger.warning(f"File not found at any of these paths: {[str(p) for p in possible_paths]}")
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Determine media type based on file extension
+        file_ext = actual_file_path.suffix.lower()
+        media_type_map = {
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.pcm': 'audio/pcm',
+            '.flac': 'audio/flac'
+        }
+        media_type = media_type_map.get(file_ext, 'application/octet-stream')
+        
+        # Return the file
+        return FileResponse(
+            path=str(actual_file_path),
+            media_type=media_type,
+            filename=actual_file_path.name
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to download file {file_path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
+
+
+@app.post("/api/files/batch/download")
+async def download_batch_files(request: Request):
+    """Download multiple files as a ZIP archive"""
+    if not file_manager:
+        raise HTTPException(status_code=503, detail="File manager not available")
+    
+    try:
+        # Parse file list from request body
+        body = await request.json()
+        file_list = body.get('files', [])
+        
+        if not file_list:
+            raise HTTPException(status_code=400, detail="No files specified")
+        
+        import zipfile
+        import io
+        from pathlib import Path
+        from datetime import datetime
+        
+        # Create in-memory ZIP file
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            files_added = 0
+            
+            for file_name in file_list:
+                # Clean the file path to prevent directory traversal
+                file_name = file_name.strip('/')
+                if '..' in file_name or file_name.startswith('/'):
+                    continue  # Skip invalid files instead of failing entire batch
+                
+                # Try different possible locations for each file
+                possible_paths = [
+                    file_manager.base_output_dir / file_name,
+                    file_manager.base_output_dir / "2025" / "09" / "07" / file_name,
+                    file_manager.base_output_dir / datetime.now().strftime("%Y/%m/%d") / file_name,
+                ]
+                
+                actual_file_path = None
+                for path in possible_paths:
+                    if path.exists():
+                        actual_file_path = path
+                        break
+                
+                if actual_file_path and actual_file_path.exists():
+                    # Add file to ZIP with its original name
+                    zip_file.write(str(actual_file_path), file_name)
+                    files_added += 1
+                    logger.info(f"Added {file_name} to batch download")
+            
+            if files_added == 0:
+                raise HTTPException(status_code=404, detail="No files found")
+        
+        # Reset buffer position to start
+        zip_buffer.seek(0)
+        
+        # Generate ZIP filename with timestamp
+        zip_filename = f"tts_batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        
+        return StreamingResponse(
+            io.BytesIO(zip_buffer.read()),
+            media_type='application/zip',
+            headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to create batch download: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create batch download: {str(e)}")
 
 
 # Configuration Management Endpoints
