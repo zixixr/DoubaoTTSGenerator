@@ -459,14 +459,52 @@ class TTSApp {
         try {
             this.showNotification('正在准备ZIP文件...', 'info');
             
-            // Here you would typically call a backend API to create a ZIP file
-            // For now, we'll just download individual files
-            this.showNotification('ZIP打包功能需要后端支持，将分别下载各文件', 'info');
-            this.downloadCompletedBatchItems();
+            // Get current audio format
+            const currentFormat = document.getElementById('format-select').value || 'mp3';
+            
+            // Collect file names from completed rows and ensure they have the correct extension
+            const files = completedRows.map(row => {
+                let filename = row.querySelector('.batch-filename').value || 'audio';
+                
+                // Remove any existing extension
+                const lastDotIndex = filename.lastIndexOf('.');
+                if (lastDotIndex > 0) {
+                    filename = filename.substring(0, lastDotIndex);
+                }
+                
+                // Add the correct extension based on current format
+                return `${filename}.${currentFormat}`;
+            });
+            
+            // Call backend API to create ZIP file
+            const response = await fetch('/api/files/batch/download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ files })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            // Download the ZIP file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `tts_batch_${new Date().toISOString().slice(0, 10)}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            this.showNotification(`已下载ZIP文件，包含 ${files.length} 个音频文件`, 'success');
             
         } catch (error) {
             console.error('ZIP download failed:', error);
-            this.showNotification('ZIP下载失败', 'error');
+            this.showNotification('ZIP下载失败: ' + error.message, 'error');
         }
     }
     

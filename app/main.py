@@ -1074,9 +1074,15 @@ async def download_batch_files(request: Request):
         raise HTTPException(status_code=503, detail="File manager not available")
     
     try:
-        # Parse file list from request body
-        body = await request.json()
+        # Get raw request body first for debugging
+        raw_body = await request.body()
+        logger.info(f"Raw request body: {raw_body.decode('utf-8') if raw_body else 'Empty'}")
+        
+        # Parse JSON from raw body
+        import json
+        body = json.loads(raw_body) if raw_body else {}
         file_list = body.get('files', [])
+        logger.info(f"Batch download request for files: {file_list}")
         
         if not file_list:
             raise HTTPException(status_code=400, detail="No files specified")
@@ -1116,6 +1122,8 @@ async def download_batch_files(request: Request):
                     zip_file.write(str(actual_file_path), file_name)
                     files_added += 1
                     logger.info(f"Added {file_name} to batch download")
+                else:
+                    logger.warning(f"File {file_name} not found in any of the expected locations: {[str(p) for p in possible_paths]}")
             
             if files_added == 0:
                 raise HTTPException(status_code=404, detail="No files found")
