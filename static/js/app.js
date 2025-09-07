@@ -66,6 +66,7 @@ class TTSApp {
         
         
         // Batch processing
+        document.getElementById('paste-batch-data').addEventListener('click', () => this.pasteBatchData());
         document.getElementById('add-batch-item').addEventListener('click', () => this.addBatchItem());
         document.getElementById('clear-batch-items').addEventListener('click', () => this.clearBatchItems());
         
@@ -388,13 +389,20 @@ class TTSApp {
      * Download individual batch item
      */
     downloadBatchItem(row) {
-        const filename = row.querySelector('.batch-filename').value || 'audio.mp3';
         const fileData = row.fileData; // This will be set when item completes
         
         if (fileData) {
+            // If we have a current job ID, create a batch-specific download URL
+            let downloadUrl = fileData.url;
+            if (this.currentJobId) {
+                const filename = fileData.filename || 'audio.mp3';
+                downloadUrl = `/api/files/${filename}?batch_id=${this.currentJobId}`;
+            }
+            
             const a = document.createElement('a');
-            a.href = fileData.url;
-            a.download = filename;
+            a.href = downloadUrl;
+            // Use the actual filename from server instead of user input
+            a.download = fileData.filename || 'audio.mp3';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -477,12 +485,19 @@ class TTSApp {
             });
             
             // Call backend API to create ZIP file
+            const requestBody = { files };
+            
+            // Include batch ID if available
+            if (this.currentJobId) {
+                requestBody.batch_id = this.currentJobId;
+            }
+            
             const response = await fetch('/api/files/batch/download', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ files })
+                body: JSON.stringify(requestBody)
             });
             
             if (!response.ok) {
@@ -523,6 +538,104 @@ class TTSApp {
         document.getElementById('batch-table').parentElement.style.display = 'none';
         
         this.showNotification('已清空所有批量处理项目', 'info');
+    }
+
+    /**
+     * Paste batch data from clipboard
+     */
+    async pasteBatchData() {
+        try {
+            // Try to read from clipboard
+            let clipboardText = '';
+            
+            if (navigator.clipboard && navigator.clipboard.readText) {
+                try {
+                    clipboardText = await navigator.clipboard.readText();
+                } catch (error) {
+                    console.warn('Clipboard API failed, falling back to prompt:', error);
+                    clipboardText = prompt('请粘贴文本数据 (格式: 文本内容\t文件名，每行一个项目):') || '';
+                }
+            } else {
+                // Fallback for browsers that don't support clipboard API
+                clipboardText = prompt('请粘贴文本数据 (格式: 文本内容\t文件名，每行一个项目):') || '';
+            }
+            
+            if (!clipboardText.trim()) {
+                this.showNotification('没有找到有效的文本数据', 'warning');
+                return;
+            }
+            
+            // Parse the pasted data
+            const parsedItems = this.parseBatchData(clipboardText);
+            
+            if (parsedItems.length === 0) {
+                this.showNotification('没有找到有效的批量数据', 'warning');
+                return;
+            }
+            
+            // Clear existing items first
+            this.clearBatchItems();
+            
+            // Add parsed items to batch table
+            parsedItems.forEach(item => {
+                this.addBatchItem(item.text, item.filename);
+            });
+            
+            this.showNotification(`成功导入 ${parsedItems.length} 个项目`, 'success');
+            
+        } catch (error) {
+            console.error('Failed to paste batch data:', error);
+            this.showNotification('粘贴数据失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Parse batch data from text
+     */
+    parseBatchData(text) {
+        const items = [];
+        const lines = text.split(/[\r\n]+/).filter(line => line.trim());
+        
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
+            
+            // Try tab-separated format first (like in test_txt.md)
+            if (trimmedLine.includes('\t')) {
+                const parts = trimmedLine.split('\t');
+                const textContent = parts[0].trim();
+                const filename = parts[1] ? parts[1].trim() : '';
+                
+                if (textContent) {
+                    items.push({
+                        text: textContent,
+                        filename: filename
+                    });
+                }
+            }
+            // Try other common separators
+            else if (trimmedLine.includes('|')) {
+                const parts = trimmedLine.split('|');
+                const textContent = parts[0].trim();
+                const filename = parts[1] ? parts[1].trim() : '';
+                
+                if (textContent) {
+                    items.push({
+                        text: textContent,
+                        filename: filename
+                    });
+                }
+            }
+            // If no separator found, treat the entire line as text content
+            else {
+                items.push({
+                    text: trimmedLine,
+                    filename: ''
+                });
+            }
+        }
+        
+        return items;
     }
     
     updateBatchIndices() {
@@ -768,6 +881,13 @@ class TTSApp {
             return;
         }
         
+        // Check if voice type is selected
+        const voiceType = document.getElementById('voice-select').value;
+        if (!voiceType) {
+            this.showNotification('请先选择音色类型', 'error');
+            return;
+        }
+        
         const params = this.getAudioParameters();
         params.text = text;
         
@@ -833,6 +953,13 @@ class TTSApp {
         
         if (items.length === 0) {
             this.showNotification('请添加批量处理项目', 'error');
+            return;
+        }
+        
+        // Check if voice type is selected
+        const voiceType = document.getElementById('voice-select').value;
+        if (!voiceType) {
+            this.showNotification('请先选择音色类型', 'error');
             return;
         }
         

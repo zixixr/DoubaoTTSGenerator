@@ -10,7 +10,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, WebSocket, Query
@@ -537,16 +537,27 @@ async def generate_tts(request: TTSRequest):
 
 
 @app.post("/api/tts/batch", response_model=BatchTTSResponse)
-async def batch_generate_tts(request: BatchTTSRequest):
+async def batch_generate_tts(request: BatchTTSRequest, raw_request: Request):
     """Submit batch TTS generation job to queue"""
     if not tts_service or not queue_manager:
         raise HTTPException(status_code=503, detail="Services not available")
     
     try:
-        logger.info(f"Submitting batch TTS job with {len(request.items)} items")
-        # Debug: Log sampling rates of all items
+        # Debug: Log raw request to see what's being received
+        import json
+        body = await raw_request.body()
+        if body:
+            try:
+                parsed_body = json.loads(body)
+                logger.info(f"RAW REQUEST BODY (first item): {json.dumps(parsed_body.get('items', [{}])[0], ensure_ascii=False)[:500]}")
+            except:
+                logger.info(f"RAW REQUEST BODY: {body[:500]}")
+        
+        logger.info(f"Submitting batch TTS job with {len(request.items)} items - RELOAD TEST V3")
+        # Debug: Log sampling rates and voice types of all items - trigger reload
         for i, item in enumerate(request.items):
-            logger.info(f"Item {i+1} sampling_rate: {item.sampling_rate}Hz")
+            voice_type_debug = item.voice_type if item.voice_type else "None/Missing"
+            logger.info(f"Item {i+1} sampling_rate: {item.sampling_rate}Hz, voice_type: {voice_type_debug}")
         
         # Generate job ID
         job_id = str(uuid.uuid4())
@@ -1011,7 +1022,7 @@ async def get_file_management_config():
 
 
 @app.get("/api/files/{file_path:path}")
-async def download_file(file_path: str):
+async def download_file(file_path: str, batch_id: str = None):
     """Download generated audio file"""
     if not file_manager:
         raise HTTPException(status_code=503, detail="File manager not available")
@@ -1026,25 +1037,45 @@ async def download_file(file_path: str):
         if '..' in file_path or file_path.startswith('/'):
             raise HTTPException(status_code=400, detail="Invalid file path")
         
-        # Try different possible locations for the file
-        possible_paths = [
-            # Direct path under output directory
-            file_manager.base_output_dir / file_path,
-            # Path with date organization (most common case)
-            file_manager.base_output_dir / "2025" / "09" / "07" / file_path,
-            # Path with just filename in today's date folder
-            file_manager.base_output_dir / datetime.now().strftime("%Y/%m/%d") / file_path,
-        ]
-        
+        # Search for the file using multiple strategies
         actual_file_path = None
-        for path in possible_paths:
-            if path.exists():
-                actual_file_path = path
+        
+        # Strategy 1: Direct search using glob pattern
+        search_patterns = []
+        
+        # If batch_id is provided, search within the batch directory first
+        if batch_id:
+            logger.info(f"Batch ID provided: {batch_id}")
+            search_patterns.extend([
+                f"batch_{batch_id}/{file_path}",      # Direct batch directory
+                f"**/batch_{batch_id}/{file_path}",   # Batch directory anywhere
+                f"batch_{batch_id}/**/{file_path}",   # File anywhere in batch directory
+            ])
+        
+        # Fallback to general search patterns (newest file prioritization)
+        search_patterns.extend([
+            f"**/{file_path}",  # Search everywhere recursively
+            f"*/{file_path}",   # Search one level deep
+            f"*/*/{file_path}"  # Search two levels deep
+        ])
+        
+        logger.info(f"Searching for file: {file_path}")
+        for pattern in search_patterns:
+            logger.info(f"Using search pattern: {pattern}")
+            matches = list(file_manager.base_output_dir.glob(pattern))
+            logger.info(f"Found {len(matches)} matches for pattern {pattern}")
+            if matches:
+                # Sort matches by modification time, newest first
+                matches_with_time = [(match, match.stat().st_mtime) for match in matches]
+                matches_with_time.sort(key=lambda x: x[1], reverse=True)
+                actual_file_path = matches_with_time[0][0]
+                logger.info(f"Available files: {[str(match) for match, _ in matches_with_time]}")
+                logger.info(f"Selected newest file: {actual_file_path} (modified: {matches_with_time[0][1]})")
                 break
         
         if not actual_file_path or not actual_file_path.exists():
-            logger.warning(f"File not found at any of these paths: {[str(p) for p in possible_paths]}")
-            raise HTTPException(status_code=404, detail="File not found")
+            logger.warning(f"File '{file_path}' not found using any search pattern")
+            raise HTTPException(status_code=404, detail=f"File '{file_path}' not found")
         
         # Determine media type based on file extension
         file_ext = actual_file_path.suffix.lower()
@@ -1065,6 +1096,8 @@ async def download_file(file_path: str):
         
     except Exception as e:
         logger.error(f"Failed to download file {file_path}: {e}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception traceback:", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
 
 
@@ -1083,13 +1116,17 @@ async def download_batch_files(request: Request):
         import json
         body = json.loads(raw_body) if raw_body else {}
         file_list = body.get('files', [])
+        batch_id = body.get('batch_id')
         logger.info(f"Batch download request for files: {file_list}")
+        if batch_id:
+            logger.info(f"Batch ID provided: {batch_id}")
         
         if not file_list:
             raise HTTPException(status_code=400, detail="No files specified")
         
         import zipfile
         import io
+        import os
         from pathlib import Path
         from datetime import datetime
         
@@ -1105,12 +1142,42 @@ async def download_batch_files(request: Request):
                 if '..' in file_name or file_name.startswith('/'):
                     continue  # Skip invalid files instead of failing entire batch
                 
-                # Try different possible locations for each file
-                possible_paths = [
-                    file_manager.base_output_dir / file_name,
-                    file_manager.base_output_dir / "2025" / "09" / "07" / file_name,
-                    file_manager.base_output_dir / datetime.now().strftime("%Y/%m/%d") / file_name,
-                ]
+                # Use the same search strategy as the single file download
+                possible_paths = []
+                
+                # If batch_id is provided, search within the batch directory first
+                if batch_id:
+                    batch_specific_patterns = [
+                        f"batch_{batch_id}/{file_name}",      # Direct batch directory
+                        f"**/batch_{batch_id}/{file_name}",   # Batch directory anywhere
+                        f"batch_{batch_id}/**/{file_name}",   # File anywhere in batch directory
+                    ]
+                    
+                    for pattern in batch_specific_patterns:
+                        matches = list(file_manager.base_output_dir.glob(pattern))
+                        if matches:
+                            # Sort matches by modification time, newest first
+                            matches_with_time = [(match, match.stat().st_mtime) for match in matches]
+                            matches_with_time.sort(key=lambda x: x[1], reverse=True)
+                            possible_paths.append(matches_with_time[0][0])
+                            break
+                
+                # Fallback to general search if batch-specific search didn't find the file
+                if not possible_paths:
+                    general_patterns = [
+                        f"**/{file_name}",  # Search everywhere recursively
+                        f"*/{file_name}",   # Search one level deep
+                        f"*/*/{file_name}"  # Search two levels deep
+                    ]
+                    
+                    for pattern in general_patterns:
+                        matches = list(file_manager.base_output_dir.glob(pattern))
+                        if matches:
+                            # Sort matches by modification time, newest first
+                            matches_with_time = [(match, match.stat().st_mtime) for match in matches]
+                            matches_with_time.sort(key=lambda x: x[1], reverse=True)
+                            possible_paths.append(matches_with_time[0][0])
+                            break
                 
                 actual_file_path = None
                 for path in possible_paths:
