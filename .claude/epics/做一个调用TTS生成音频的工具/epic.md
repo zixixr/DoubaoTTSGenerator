@@ -1,10 +1,11 @@
 ---
 name: 做一个调用TTS生成音频的工具
-status: backlog
+status: completed
 created: 2025-09-05T16:52:51Z
-progress: 0%
+progress: 100%
 prd: .claude/prds/做一个调用TTS生成音频的工具.md
 github: https://github.com/zixixr/DoubaoTTSGenerator/issues/1
+last_sync: 2025-09-06T03:50:06Z
 ---
 
 # Epic: 做一个调用TTS生成音频的工具
@@ -177,14 +178,14 @@ github: https://github.com/zixixr/DoubaoTTSGenerator/issues/1
 - 添加使用统计仪表板
 
 ## Tasks Created
-- [ ] #2 - 设置项目结构和依赖安装 (parallel: false)
-- [ ] #3 - 实现TTS API服务封装 (parallel: true)
-- [ ] #4 - 创建FastAPI后端核心端点 (parallel: true)
-- [ ] #5 - 开发基础Web界面 (parallel: true)
-- [ ] #6 - 实现批处理逻辑和队列管理 (parallel: false)
-- [ ] #7 - 添加文件管理和命名系统 (parallel: true)
-- [ ] #8 - 实现配置管理和成本控制 (parallel: true)
-- [ ] #9 - UI优化和错误处理完善 (parallel: false)
+- [x] #2 - 设置项目结构和依赖安装 (parallel: false)
+- [x] #3 - 实现TTS API服务封装 (parallel: true)
+- [x] #4 - 创建FastAPI后端核心端点 (parallel: true)
+- [x] #5 - 开发基础Web界面 (parallel: true)
+- [x] #6 - 实现批处理逻辑和队列管理 (parallel: false)
+- [x] #7 - 添加文件管理和命名系统 (parallel: true)
+- [x] #8 - 实现配置管理和成本控制 (parallel: true)
+- [x] #9 - UI优化和错误处理完善 (parallel: false)
 
 Total tasks: 8
 Parallel tasks: 5

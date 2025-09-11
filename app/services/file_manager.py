@@ -468,7 +468,7 @@ class FileManager:
         # Add session/batch subdirectory for isolation
         # Use batch_id if available (for batch processing)
         # Otherwise use a timestamp-based session directory
-        if 'batch_id' in context:
+        if 'batch_id' in context and context['batch_id'] is not None:
             session_dir = output_dir / f"batch_{context['batch_id']}"
         elif 'session_id' in context:
             session_dir = output_dir / f"session_{context['session_id']}"

@@ -1,14 +1,14 @@
 {
   "app": {
-    "appid": "xxxx",
-    "token": "access_token",
-    "cluster": "xxxx"
+    "appid": "7120161673",
+    "token": "1S1ytpziyHoBscoULan0qADv1bUhA5Ht",
+    "cluster": "volcano_tts"
   },
   "user": {
     "uid": "388808087185088"
   },
   "audio": {
-    "voice_type": "xxxx",
+    "voice_type": "BV700_V2_streaming",
     "rate": 24000,
     "encoding": "mp3",
     "compression_rate": 1,

@@ -138,18 +138,23 @@ class BatchJob:
         """Create BatchJob from request data"""
         items = []
         for i, item_data in enumerate(request_data.get('items', [])):
+            # Extract parameters that need to be passed to synthesize_to_file
+            params = {
+                'voice_type': item_data.get('voice_type'),
+                'encoding': item_data.get('encoding', 'mp3'),
+                'speed_ratio': item_data.get('speed_ratio', 1.0),
+                'volume_ratio': item_data.get('volume_ratio', 1.0),
+                'pitch_ratio': item_data.get('pitch_ratio', 1.0),
+                'emotion': item_data.get('emotion'),
+                'language': item_data.get('language'),
+                'sampling_rate': item_data.get('sampling_rate', 24000)
+            }
+            
             item = JobItem(
                 index=i,
                 text=item_data['text'],
                 filename=item_data.get('filename'),
-                voice_type=item_data.get('voice_type'),
-                encoding=item_data.get('encoding', 'mp3'),
-                speed_ratio=item_data.get('speed_ratio', 1.0),
-                volume_ratio=item_data.get('volume_ratio', 1.0),
-                pitch_ratio=item_data.get('pitch_ratio', 1.0),
-                emotion=item_data.get('emotion'),
-                language=item_data.get('language'),
-                sampling_rate=item_data.get('sampling_rate', 24000)
+                **params  # Pass all parameters as keyword arguments
             )
             items.append(item)
         
@@ -572,10 +577,12 @@ class QueueManager:
                         pitch_ratio=item.params.get('pitch_ratio', 1.0),
                         emotion=item.params.get('emotion'),
                         language=item.params.get('language'),
-                        sample_rate=item.params.get('sampling_rate', 24000)  # Map sampling_rate to sample_rate
+                        sample_rate=item.params.get('sampling_rate', 24000),  # Map sampling_rate to sample_rate
+                        batch_id=item.params.get('batch_id')  # Pass batch_id for directory isolation
                     )
                     # Debug log
                     self.logger.info(f"Queue processing item: sampling_rate from params = {item.params.get('sampling_rate', 'NOT_FOUND')}, mapped to sample_rate = {item.params.get('sampling_rate', 24000)}")
+                    self.logger.info(f"Queue processing item: voice_type from params = {item.params.get('voice_type', 'NOT_FOUND')}")
                 else:
                     # Legacy filename generation (fallback)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
