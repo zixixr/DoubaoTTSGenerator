@@ -82,7 +82,7 @@ class TTSService:
         self.backoff_factor = 2.0
         
         # Text limits
-        self.max_text_length = 1024  # UTF-8 bytes
+        self.max_text_length = 2000  # UTF-8 bytes
         
         # Initialize
         self._load_configurations()
@@ -459,6 +459,7 @@ class TTSService:
                 "speed_ratio": kwargs.get('speed_ratio', self.config['audio'].get('speed_ratio', 1.0)),
                 "volume_ratio": kwargs.get('volume_ratio', self.config['audio'].get('volume_ratio', 1.0)),
                 "pitch_ratio": kwargs.get('pitch_ratio', self.config['audio'].get('pitch_ratio', 1.0)),
+                "emotion": kwargs.get('emotion') or self.config['audio'].get('emotion'),
             },
             "request": {
                 "reqid": str(uuid.uuid4()),
@@ -472,6 +473,9 @@ class TTSService:
         
         # Debug: Log the rate being sent to API 
         self.logger.info(f"TTS API request - rate: {request_data['audio']['rate']}Hz, sample_rate in kwargs: {kwargs.get('sample_rate', 'NOT_PROVIDED')}")
+        
+        # Debug: Log the complete audio section being sent to API - TRIGGER RELOAD
+        self.logger.info(f"TTS API request payload - audio section: {json.dumps(request_data['audio'], ensure_ascii=False)}")
         
         return request_data
     
@@ -501,6 +505,8 @@ class TTSService:
         # Include sample_rate in kwargs if provided
         if sample_rate is not None:
             kwargs['sample_rate'] = sample_rate
+        # Debug voice_type parameter
+        self.logger.info(f"TTS synthesize_speech: received voice_type = {voice_type}, will use: {voice_type or self.config['audio']['voice_type']}")
         request_data = self.build_request_payload(text, voice_type, encoding, **kwargs)
         
         # Make API request
@@ -573,7 +579,7 @@ class TTSService:
                 'emotion': kwargs.get('emotion', ''),
                 'category': 'tts_generated',
                 # Add batch_id if provided (for batch processing isolation)
-                'batch_id': kwargs.get('batch_id') if kwargs.get('batch_id') else None,
+                'batch_id': kwargs.get('batch_id'),
                 # Add audio parameters to context for conflict resolution
                 'rate': kwargs.get('sample_rate', self.config.get('audio', {}).get('rate', 24000)),
                 'speed_ratio': kwargs.get('speed_ratio', 1.0),

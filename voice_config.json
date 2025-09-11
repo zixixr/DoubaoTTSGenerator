@@ -333,6 +333,41 @@
       ],
       "special": [
         {
+          "name": "北京小爷（多情感）",
+          "voice_type": "zh_male_beijingxiaoye_emo_v2_mars_bigtts",
+          "timestamp_support": true,
+          "emotions": ["通用", "开心", "悲伤", "生气", "害怕", "厌恶", "惊讶"],
+          "languages": ["中文"]
+        },
+        {
+          "name": "暖心学姐",
+          "voice_type": "ICL_zh_female_nuanxinxuejie_tob",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "活泼女孩",
+          "voice_type": "ICL_zh_female_huoponvhai_tob",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "柔美女友",
+          "voice_type": "zh_female_sajiaonvyou_moon_bigtts",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
+          "name": "纯真少女",
+          "voice_type": "ICL_zh_female_chunzhenshaonv_e588402fb8ad_tob",
+          "timestamp_support": true,
+          "emotions": [],
+          "languages": ["中文"]
+        },
+        {
           "name": "奶气萌娃",
           "voice_type": "BV051_streaming",
           "timestamp_support": true,
