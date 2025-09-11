@@ -5,7 +5,14 @@
       "Bash(git remote add:*)",
       "Bash(git remote set-url:*)",
       "Bash(git add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(node:*)",
+      "Bash(pip install:*)",
+      "Bash(git commit:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

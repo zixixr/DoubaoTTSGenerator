@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>批量采样率调试工具</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; }
+        .debug-output { background: #f5f5f5; padding: 10px; font-family: monospace; }
+        button { padding: 10px 20px; margin: 5px; }
+        select, input { margin: 5px; padding: 5px; }
+    </style>
+</head>
+<body>
+    <h1>批量采样率调试工具</h1>
+    
+    <div class="debug-section">
+        <h3>1. 模拟UI参数选择</h3>
+        <label>采样率: </label>
+        <select id="sample-rate-select">
+            <option value="8000">8000 Hz</option>
+            <option value="16000">16000 Hz</option>
+            <option value="24000" selected>24000 Hz</option>
+        </select>
+        
+        <label>音色: </label>
+        <select id="voice-select">
+            <option value="BV700_V2_streaming">BV700_V2_streaming</option>
+        </select>
+        
+        <label>格式: </label>
+        <select id="format-select">
+            <option value="mp3">MP3</option>
+        </select>
+        
+        <button onclick="debugGetAudioParameters()">获取音频参数</button>
+    </div>
+    
+    <div class="debug-section">
+        <h3>2. 模拟批量项目</h3>
+        <div>
+            <input type="text" id="text1" value="测试文本1" placeholder="文本1">
+            <input type="text" id="filename1" value="test1.mp3" placeholder="文件名1">
+        </div>
+        <div>
+            <input type="text" id="text2" value="测试文本2" placeholder="文本2">
+            <input type="text" id="filename2" value="test2.mp3" placeholder="文件名2">
+        </div>
+        <button onclick="debugGetBatchItems()">获取批量项目</button>
+    </div>
+    
+    <div class="debug-section">
+        <h3>3. 构建批量请求</h3>
+        <button onclick="debugBuildBatchRequest()">构建批量请求JSON</button>
+    </div>
+    
+    <div class="debug-section">
+        <h3>调试输出</h3>
+        <div id="debug-output" class="debug-output">点击上面的按钮开始调试...</div>
+    </div>
+    
+    <script>
+        // 从主应用复制的关键函数
+        function validateSampleRate(value) {
+            const validRates = [8000, 16000, 24000];
+            const intValue = parseInt(value);
+            
+            if (validRates.includes(intValue)) {
+                return intValue;
+            }
+            
+            console.warn(`Invalid sample rate: ${value}, defaulting to 24000`);
+            return 24000;
+        }
+
+        function getAudioParameters() {
+            const sampleRate = validateSampleRate(document.getElementById('sample-rate-select').value);
+            return {
+                voice_type: document.getElementById('voice-select').value || null,
+                encoding: document.getElementById('format-select').value,
+                speed_ratio: 1.0,
+                volume_ratio: 1.0,
+                pitch_ratio: 1.0,
+                emotion: null,
+                sampling_rate: sampleRate,
+                language: null
+            };
+        }
+        
+        function debugGetAudioParameters() {
+            const params = getAudioParameters();
+            const output = document.getElementById('debug-output');
+            output.innerHTML = `
+<h4>音频参数获取结果:</h4>
+<pre>${JSON.stringify(params, null, 2)}</pre>
+<p><strong>采样率值:</strong> ${params.sampling_rate}Hz</p>
+<p><strong>参数名:</strong> sampling_rate</p>
+            `;
+        }
+        
+        function debugGetBatchItems() {
+            const items = [];
+            
+            // 模拟获取两个批量项目
+            const texts = [
+                document.getElementById('text1').value,
+                document.getElementById('text2').value
+            ];
+            const filenames = [
+                document.getElementById('filename1').value,
+                document.getElementById('filename2').value
+            ];
+            
+            texts.forEach((text, index) => {
+                if (text.trim()) {
+                    const params = getAudioParameters();
+                    params.text = text;
+                    params.filename = filenames[index] || null;
+                    items.push(params);
+                }
+            });
+            
+            const output = document.getElementById('debug-output');
+            output.innerHTML = `
+<h4>批量项目构建结果:</h4>
+<pre>${JSON.stringify(items, null, 2)}</pre>
+<p><strong>项目数量:</strong> ${items.length}</p>
+<p><strong>每个项目的采样率:</strong> ${items.map(item => item.sampling_rate + 'Hz').join(', ')}</p>
+            `;
+        }
+        
+        function debugBuildBatchRequest() {
+            const items = [];
+            
+            // 获取批量项目
+            const texts = [
+                document.getElementById('text1').value,
+                document.getElementById('text2').value
+            ];
+            const filenames = [
+                document.getElementById('filename1').value,
+                document.getElementById('filename2').value
+            ];
+            
+            texts.forEach((text, index) => {
+                if (text.trim()) {
+                    const params = getAudioParameters();
+                    params.text = text;
+                    params.filename = filenames[index] || null;
+                    items.push(params);
+                }
+            });
+            
+            const batchRequest = {
+                items: items,
+                output_dir: "./output",
+                max_concurrent: 2,
+                max_retries: 3,
+                priority: 5,
+                filename_template: "{filename}"
+            };
+            
+            const output = document.getElementById('debug-output');
+            output.innerHTML = `
+<h4>完整批量请求JSON:</h4>
+<pre>${JSON.stringify(batchRequest, null, 2)}</pre>
+<h4>发送到后端的URL:</h4>
+<p>POST /api/tts/batch</p>
+<h4>检查点:</h4>
+<ul>
+    <li>✓ 每个item都包含sampling_rate字段</li>
+    <li>✓ 采样率值: ${items.map(item => item.sampling_rate).join(', ')}</li>
+    <li>✓ 参数名称: sampling_rate (匹配后端BatchTTSItem模型)</li>
+</ul>
+            `;
+        }
+    </script>
+</body>
+</html>
